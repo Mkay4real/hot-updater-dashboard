@@ -6,7 +6,9 @@ import { createClient } from '@supabase/supabase-js';
 // CONFIGURATION - Choose your database provider
 // ============================================
 
-const DB_PROVIDER = process.env.DB_PROVIDER || 'supabase'; // 'supabase', 'postgres', 'cloudflare-d1'
+console.log('[INIT] process.env.DB_PROVIDER at module load:', process.env.DB_PROVIDER);
+const DB_PROVIDER = process.env.DB_PROVIDER || 'mock'; // 'supabase', 'postgres', 'cloudflare-d1', 'mock'
+console.log('[INIT] DB_PROVIDER set to:', DB_PROVIDER);
 
 // Supabase Configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -27,6 +29,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  * Get all deployments
  */
 export async function getDeployments() {
+  console.log('[DEBUG] DB_PROVIDER:', DB_PROVIDER, 'from env:', process.env.DB_PROVIDER);
   if (DB_PROVIDER === 'supabase') {
     const { data, error } = await supabase
       .from('deployments')
