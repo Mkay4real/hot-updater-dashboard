@@ -1,7 +1,21 @@
 {
   "name": "hot-updater-dashboard",
   "version": "1.0.0",
-  "description": "Visual dashboard for managing Hot Updater deployments",
+  "description": "Production-ready dashboard for managing Hot Updater OTA deployments",
+  "author": "Mukhtar Oyelayo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/hot-updater-dashboard"
+  },
+  "keywords": [
+    "hot-updater",
+    "react-native",
+    "ota-updates",
+    "dashboard",
+    "nextjs",
+    "typescript"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
