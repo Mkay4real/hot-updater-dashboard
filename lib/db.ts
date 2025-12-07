@@ -26,30 +26,30 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ============================================
 
 /**
- * Get all deployments
+ * Get all deployments (from hot-updater bundles table)
  */
 export async function getDeployments() {
   console.log('[DEBUG] DB_PROVIDER:', DB_PROVIDER, 'from env:', process.env.DB_PROVIDER);
   if (DB_PROVIDER === 'supabase') {
     const { data, error } = await supabase
-      .from('deployments')
+      .from('bundles')
       .select('*')
-      .order('deployed_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(50);
 
     if (error) throw error;
 
-    // Transform to match our interface
+    // Transform hot-updater bundles to match our deployment interface
     return data.map((row: any) => ({
       id: row.id,
-      version: row.version,
+      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
       platform: row.platform,
-      channel: row.channel,
-      status: row.status,
-      deployedAt: formatDate(row.deployed_at),
-      deployedBy: row.deployed_by || 'System',
-      bundleSize: formatBytes(row.bundle_size),
-      downloads: row.downloads || 0,
+      channel: row.channel || 'production',
+      status: row.enabled ? 'success' : 'failed',
+      deployedAt: formatDate(row.id), // UUIDv7 contains timestamp
+      deployedBy: row.message || 'System',
+      bundleSize: 'N/A', // Size info not directly available
+      downloads: 0, // Hot updater doesn't track downloads in bundles table
     }));
   }
 
@@ -103,26 +103,26 @@ export async function getDeployments() {
 }
 
 /**
- * Get all bundles
+ * Get all bundles (from hot-updater bundles table)
  */
 export async function getBundles() {
   if (DB_PROVIDER === 'supabase') {
     const { data, error } = await supabase
       .from('bundles')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(20);
 
     if (error) throw error;
 
     return data.map((row: any) => ({
       id: row.id,
-      version: row.version,
+      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
       platform: row.platform,
-      channel: row.channel,
-      createdAt: formatDate(row.created_at),
-      size: formatBytes(row.size),
-      active: row.active,
+      channel: row.channel || 'production',
+      createdAt: formatDate(row.id), // UUIDv7 contains timestamp
+      size: 'N/A', // Size info in storage_uri, not directly queryable
+      active: row.enabled,
     }));
   }
 
@@ -186,41 +186,34 @@ export async function getBundles() {
 }
 
 /**
- * Get dashboard statistics
+ * Get dashboard statistics (from hot-updater bundles table)
  */
 export async function getStats() {
   if (DB_PROVIDER === 'supabase') {
-    // Get total deployments
+    // Get total bundles/deployments
     const { count: totalDeployments } = await supabase
-      .from('deployments')
+      .from('bundles')
       .select('*', { count: 'exact', head: true });
 
-    // Get active users (this would need to be tracked separately)
-    const { data: usersData } = await supabase
-      .from('app_users')
-      .select('count');
+    // Get enabled bundles count
+    const { count: enabledBundles } = await supabase
+      .from('bundles')
+      .select('*', { count: 'exact', head: true })
+      .eq('enabled', true);
 
-    // Get update rate
-    const { data: updateData } = await supabase
-      .from('update_stats')
-      .select('adoption_rate')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    // Get last deployment
-    const { data: lastDeploy } = await supabase
-      .from('deployments')
-      .select('deployed_at')
-      .order('deployed_at', { ascending: false })
+    // Get last bundle
+    const { data: lastBundle } = await supabase
+      .from('bundles')
+      .select('*')
+      .order('id', { ascending: false })
       .limit(1)
       .single();
 
     return {
       totalDeployments: totalDeployments || 0,
-      activeUsers: usersData?.[0]?.count || 0,
-      updateRate: updateData?.adoption_rate || 0,
-      lastDeployment: formatDate(lastDeploy?.deployed_at),
+      activeUsers: enabledBundles || 0, // Using enabled bundles as proxy for active deployments
+      updateRate: totalDeployments ? Math.round((enabledBundles || 0) / totalDeployments * 100) : 0,
+      lastDeployment: formatDate(lastBundle?.id),
     };
   }
 
@@ -234,33 +227,27 @@ export async function getStats() {
 }
 
 /**
- * Rollback to a specific deployment
+ * Rollback to a specific deployment (enable/disable bundle)
  */
 export async function rollbackDeployment(deploymentId: string) {
   if (DB_PROVIDER === 'supabase') {
-    // Get the deployment details
-    const { data: deployment, error } = await supabase
-      .from('deployments')
+    // Get the bundle details
+    const { data: bundle, error } = await supabase
+      .from('bundles')
       .select('*')
       .eq('id', deploymentId)
       .single();
 
     if (error) throw error;
 
-    // Create a new deployment with the old version
-    const { error: insertError } = await supabase
-      .from('deployments')
-      .insert({
-        version: deployment.version,
-        platform: deployment.platform,
-        channel: deployment.channel,
-        status: 'success',
-        deployed_by: 'system_rollback',
-        bundle_size: deployment.bundle_size,
-        deployed_at: new Date().toISOString(),
-      });
+    // In hot-updater, rollback means toggling the enabled state
+    // or you could disable all other bundles in the same channel and enable this one
+    const { error: updateError } = await supabase
+      .from('bundles')
+      .update({ enabled: !bundle.enabled })
+      .eq('id', deploymentId);
 
-    if (insertError) throw insertError;
+    if (updateError) throw updateError;
 
     return { success: true };
   }
@@ -319,65 +306,36 @@ function formatBytes(bytes: number | undefined): string {
 }
 
 // ============================================
-// SQL FOR SUPABASE TABLE CREATION
+// HOT UPDATER SCHEMA REFERENCE
 // ============================================
 
 /*
-Run these SQL commands in your Supabase SQL editor:
+This dashboard works with the Hot Updater CLI's existing Supabase schema.
 
--- Deployments table
-CREATE TABLE IF NOT EXISTS deployments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  version TEXT NOT NULL,
-  platform TEXT NOT NULL CHECK (platform IN ('ios', 'android', 'all')),
-  channel TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('success', 'failed', 'pending')),
-  deployed_by TEXT,
-  bundle_size BIGINT,
-  downloads INTEGER DEFAULT 0,
-  deployed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+Hot Updater automatically creates the following table structure when you run:
+  npx hot-updater init
 
--- Bundles table
-CREATE TABLE IF NOT EXISTS bundles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  version TEXT NOT NULL,
-  platform TEXT NOT NULL CHECK (platform IN ('ios', 'android')),
-  channel TEXT NOT NULL,
-  size BIGINT NOT NULL,
-  active BOOLEAN DEFAULT FALSE,
-  fingerprint TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+BUNDLES TABLE SCHEMA (created by hot-updater):
+- id: UUID (UUIDv7 with embedded timestamp)
+- platform: TEXT ('ios' or 'android')
+- target_app_version: TEXT (nullable - specific app version this bundle targets)
+- should_force_update: BOOLEAN (whether to force update on clients)
+- enabled: BOOLEAN (whether this bundle is active/deployable)
+- file_hash: TEXT (SHA256 hash of the bundle file)
+- git_commit_hash: TEXT (Git commit hash when bundle was created)
+- message: TEXT (deployment message/notes)
+- channel: TEXT (deployment channel: 'development', 'staging', 'production')
+- fingerprint_hash: TEXT (unique fingerprint for bundle identification)
+- metadata: JSONB (additional metadata like app_version)
+- storage_uri: TEXT (location of bundle file in storage)
 
--- App users table (for tracking)
-CREATE TABLE IF NOT EXISTS app_users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_id TEXT UNIQUE NOT NULL,
-  platform TEXT NOT NULL,
-  app_version TEXT,
-  bundle_version TEXT,
-  last_update_check TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+The dashboard reads from this existing structure and transforms it for display.
 
--- Update stats table
-CREATE TABLE IF NOT EXISTS update_stats (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  date DATE NOT NULL,
-  total_checks INTEGER DEFAULT 0,
-  successful_updates INTEGER DEFAULT 0,
-  failed_updates INTEGER DEFAULT 0,
-  adoption_rate DECIMAL(5,2) DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+To set up Hot Updater with Supabase:
+1. Run: npx hot-updater init
+2. Select Supabase as your provider
+3. The CLI will automatically create the required tables and storage bucket
+4. Configure this dashboard's .env.local with the same Supabase credentials
 
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_deployments_channel ON deployments(channel);
-CREATE INDEX IF NOT EXISTS idx_deployments_platform ON deployments(platform);
-CREATE INDEX IF NOT EXISTS idx_deployments_deployed_at ON deployments(deployed_at DESC);
-CREATE INDEX IF NOT EXISTS idx_bundles_active ON bundles(active);
-CREATE INDEX IF NOT EXISTS idx_app_users_bundle_version ON app_users(bundle_version);
+For more information, visit: https://hot-updater.dev
 */
