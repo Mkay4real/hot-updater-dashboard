@@ -35,19 +35,52 @@ export async function POST(request: Request) {
     }
 
     // Execute hot-updater deploy command
-    const command = `cd ${projectPath} && npx hot-updater deploy -p ${platform} -c ${channel}`;
-    const { stdout, stderr } = await execPromise(command, {
-      timeout: 300000, // 5 minute timeout
-    });
+    let output = '';
 
-    if (stderr && !stderr.includes('warning')) {
-      console.error('Deployment stderr:', stderr);
+    if (platform === 'all') {
+      // Deploy to both platforms sequentially
+      const iosCommand = `cd ${projectPath} && npx hot-updater deploy -p ios -c ${channel}`;
+      const androidCommand = `cd ${projectPath} && npx hot-updater deploy -p android -c ${channel}`;
+
+      // Deploy to iOS first
+      const iosResult = await execPromise(iosCommand, {
+        timeout: 300000, // 5 minute timeout
+      });
+
+      if (iosResult.stderr && !iosResult.stderr.includes('warning')) {
+        console.error('iOS deployment stderr:', iosResult.stderr);
+      }
+
+      output += `iOS Deployment:\n${iosResult.stdout}\n\n`;
+
+      // Then deploy to Android
+      const androidResult = await execPromise(androidCommand, {
+        timeout: 300000, // 5 minute timeout
+      });
+
+      if (androidResult.stderr && !androidResult.stderr.includes('warning')) {
+        console.error('Android deployment stderr:', androidResult.stderr);
+      }
+
+      output += `Android Deployment:\n${androidResult.stdout}`;
+    } else {
+      // Deploy to single platform
+      const command = `cd ${projectPath} && npx hot-updater deploy -p ${platform} -c ${channel}`;
+      const { stdout, stderr } = await execPromise(command, {
+        timeout: 300000, // 5 minute timeout
+      });
+
+      if (stderr && !stderr.includes('warning')) {
+        console.error('Deployment stderr:', stderr);
+      }
+
+      output = stdout;
     }
 
     return NextResponse.json({
       success: true,
       message: 'Deployment completed',
-      output: stdout
+      output
     });
   } catch (error: any) {
     console.error('Deployment error:', error);
