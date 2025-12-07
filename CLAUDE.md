@@ -68,12 +68,9 @@ hot-updater-dashboard/
 
 ### Database Layer Architecture
 
-The database layer (`lib/db.ts`) uses a **provider abstraction pattern** supporting three backends:
-- **Supabase** (default) - Recommended for quick setup
-- **PostgreSQL** - Direct connection for self-hosted databases
-- **Cloudflare D1** - Serverless SQLite for edge deployments
+The database layer (`lib/db.ts`) integrates with **Hot Updater's existing Supabase schema**. Hot Updater CLI automatically creates the required database tables when you run `npx hot-updater init` in your React Native project.
 
-Switch providers via the `DB_PROVIDER` environment variable. The database functions (`getDeployments`, `getBundles`, `getStats`, `rollbackDeployment`) abstract away provider differences and return consistent data structures. Mock data is provided as fallback for development without database setup.
+**Important**: This dashboard does NOT create its own tables. It reads from the `bundles` table that Hot Updater creates and manages. The database functions (`getDeployments`, `getBundles`, `getStats`, `rollbackDeployment`) transform Hot Updater's schema into the dashboard's display format. Mock data is provided as fallback for development without database setup.
 
 ### API Route Pattern
 
@@ -87,25 +84,25 @@ The `/api/deploy` endpoint is unique - it executes shell commands using Node's `
 
 ### Database Schema
 
-Four main tables with specific relationships:
+This dashboard integrates with Hot Updater's existing database schema:
 
-**deployments** - Core deployment history
-- Tracks version, platform (ios/android/all), channel, status, downloads
-- Links to bundles via version + platform + channel
+**bundles** - Hot Updater's bundle metadata table (created by hot-updater CLI)
+- `id`: UUID (UUIDv7 with embedded timestamp)
+- `platform`: 'ios' or 'android'
+- `channel`: Deployment channel ('development', 'staging', 'production')
+- `enabled`: Boolean flag indicating if bundle is active
+- `file_hash`: SHA256 hash of the bundle file
+- `git_commit_hash`: Git commit when bundle was created
+- `message`: Deployment message/notes
+- `metadata`: JSONB field containing app_version and other data
+- `storage_uri`: Location of bundle file in Supabase Storage
+- `fingerprint_hash`: Unique fingerprint for bundle identification
+- `target_app_version`: Specific app version this bundle targets (nullable)
+- `should_force_update`: Whether to force update on clients
 
-**bundles** - Bundle metadata and storage info
-- Stores bundle size, fingerprint, active status
-- One bundle can have multiple deployments
+The dashboard transforms this data into a user-friendly format for viewing deployments, bundles, and analytics.
 
-**app_users** - User tracking for analytics
-- Tracks device_id, platform, current bundle_version
-- Used to calculate adoption rates and active users
-
-**update_stats** - Aggregated analytics (daily)
-- Pre-calculated metrics for dashboard performance
-- Contains adoption_rate, total_checks, successful/failed updates
-
-See the SQL schema at the bottom of [lib/db.ts](lib/db.ts:322-380) or in README.md.
+See the full schema documentation at the bottom of [lib/db.ts](lib/db.ts:308-341).
 
 ### Component Architecture
 
@@ -147,19 +144,29 @@ The `HOT_UPDATER_PROJECT_PATH` environment variable must point to your React Nat
 
 ### Database Setup
 
-For Supabase: Run the SQL script in [lib/db.ts:322-380](lib/db.ts:322-380) or from README.md in the Supabase SQL editor to create required tables and indexes.
+**Important**: This dashboard uses Hot Updater's existing database schema. You don't need to create any tables manually.
 
-For PostgreSQL: Execute the same SQL script directly on your PostgreSQL instance.
+1. In your React Native project, run `npx hot-updater init` and select Supabase as your provider
+2. Hot Updater will automatically create the required `bundles` table and storage bucket in your Supabase project
+3. Use the same Supabase credentials (URL and anon key) in this dashboard's `.env.local` file
+4. The dashboard will automatically read from Hot Updater's `bundles` table
+
+See [lib/db.ts:308-341](lib/db.ts:308-341) for the complete Hot Updater schema reference.
 
 ## Common Development Workflows
 
 **Initial Setup:**
-1. Clone or download this repository
-2. Run `npm install` to install dependencies
-3. Copy `env.example` to `.env.local` and configure with your database credentials
-4. Set up database tables using the SQL script in lib/db.ts or README.md
-5. Start dev server with `npm run dev`
-6. Visit http://localhost:3000
+1. Set up Hot Updater in your React Native project first:
+   - Run `npx hot-updater init` in your RN project
+   - Select Supabase as your provider
+   - This creates the database tables and storage bucket
+2. Clone or download this dashboard repository
+3. Run `npm install` to install dependencies
+4. Copy `env.example` to `.env.local`
+5. Configure `.env.local` with the SAME Supabase credentials from step 1
+6. Set `HOT_UPDATER_PROJECT_PATH` to your React Native project path
+7. Start dev server with `npm run dev`
+8. Visit http://localhost:3000
 
 **Adding New API Endpoints:**
 - Create new folder under `app/api/` with a `route.ts` file
