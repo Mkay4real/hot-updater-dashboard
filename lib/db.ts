@@ -7,13 +7,47 @@ import { createClient } from '@supabase/supabase-js';
 // ============================================
 
 console.log('[INIT] process.env.DB_PROVIDER at module load:', process.env.DB_PROVIDER);
-const DB_PROVIDER = process.env.DB_PROVIDER || 'mock'; // 'supabase', 'postgres', 'cloudflare-d1', 'mock'
+const DB_PROVIDER = process.env.DB_PROVIDER || 'mock'; // 'supabase', 'aws-rds', 'dynamodb', 'postgres', 'cloudflare-d1', 'mock'
 console.log('[INIT] DB_PROVIDER set to:', DB_PROVIDER);
 
 // Supabase Configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// AWS RDS PostgreSQL Configuration
+let rdsPool: any = null;
+if (DB_PROVIDER === 'aws-rds') {
+  const { Pool } = require('pg');
+  rdsPool = new Pool({
+    host: process.env.AWS_RDS_HOST,
+    port: parseInt(process.env.AWS_RDS_PORT || '5432'),
+    database: process.env.AWS_RDS_DATABASE,
+    user: process.env.AWS_RDS_USER,
+    password: process.env.AWS_RDS_PASSWORD,
+    ssl: process.env.AWS_RDS_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+}
+
+// DynamoDB Configuration (for Lambda@Edge)
+let dynamoDBClient: any = null;
+if (DB_PROVIDER === 'dynamodb') {
+  const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+  const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
+
+  const client = new DynamoDBClient({
+    region: process.env.AWS_DYNAMODB_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    },
+  });
+
+  dynamoDBClient = DynamoDBDocumentClient.from(client);
+}
 
 // PostgreSQL Configuration (if using direct connection)
 // import { Pool } from 'pg';
@@ -30,6 +64,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function getDeployments() {
   console.log('[DEBUG] DB_PROVIDER:', DB_PROVIDER, 'from env:', process.env.DB_PROVIDER);
+
   if (DB_PROVIDER === 'supabase') {
     const { data, error } = await supabase
       .from('bundles')
@@ -50,6 +85,52 @@ export async function getDeployments() {
       deployedBy: row.message || 'System',
       bundleSize: 'N/A', // Size info not directly available
       downloads: 0, // Hot updater doesn't track downloads in bundles table
+    }));
+  }
+
+  if (DB_PROVIDER === 'aws-rds') {
+    const result = await rdsPool.query(
+      'SELECT * FROM bundles ORDER BY id DESC LIMIT 50'
+    );
+
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+      platform: row.platform,
+      channel: row.channel || 'production',
+      status: row.enabled ? 'success' : 'failed',
+      deployedAt: formatDate(row.id),
+      deployedBy: row.message || 'System',
+      bundleSize: 'N/A',
+      downloads: 0,
+    }));
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    const result = await dynamoDBClient.send(
+      new ScanCommand({
+        TableName: tableName,
+        Limit: 50,
+      })
+    );
+
+    const items = result.Items || [];
+    // Sort by id descending (assuming UUIDv7 with timestamp)
+    items.sort((a: any, b: any) => (b.id || '').localeCompare(a.id || ''));
+
+    return items.map((row: any) => ({
+      id: row.id,
+      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+      platform: row.platform,
+      channel: row.channel || 'production',
+      status: row.enabled ? 'success' : 'failed',
+      deployedAt: formatDate(row.id),
+      deployedBy: row.message || 'System',
+      bundleSize: 'N/A',
+      downloads: 0,
     }));
   }
 
@@ -122,6 +203,59 @@ export async function getBundles() {
       channel: row.channel || 'production',
       createdAt: formatDate(row.id), // UUIDv7 contains timestamp
       size: 'N/A', // Size info in storage_uri, not directly queryable
+      active: row.enabled,
+      enabled: row.enabled,
+      forceUpdate: row.should_force_update,
+      message: row.message,
+      fingerprintHash: row.fingerprint_hash,
+      targetAppVersion: row.target_app_version,
+      commitHash: row.git_commit_hash,
+    }));
+  }
+
+  if (DB_PROVIDER === 'aws-rds') {
+    const result = await rdsPool.query(
+      'SELECT * FROM bundles ORDER BY id DESC LIMIT 20'
+    );
+
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+      platform: row.platform,
+      channel: row.channel || 'production',
+      createdAt: formatDate(row.id),
+      size: 'N/A',
+      active: row.enabled,
+      enabled: row.enabled,
+      forceUpdate: row.should_force_update,
+      message: row.message,
+      fingerprintHash: row.fingerprint_hash,
+      targetAppVersion: row.target_app_version,
+      commitHash: row.git_commit_hash,
+    }));
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    const result = await dynamoDBClient.send(
+      new ScanCommand({
+        TableName: tableName,
+        Limit: 20,
+      })
+    );
+
+    const items = result.Items || [];
+    items.sort((a: any, b: any) => (b.id || '').localeCompare(a.id || ''));
+
+    return items.map((row: any) => ({
+      id: row.id,
+      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+      platform: row.platform,
+      channel: row.channel || 'production',
+      createdAt: formatDate(row.id),
+      size: 'N/A',
       active: row.enabled,
       enabled: row.enabled,
       forceUpdate: row.should_force_update,
@@ -259,6 +393,49 @@ export async function getStats() {
     };
   }
 
+  if (DB_PROVIDER === 'aws-rds') {
+    const totalResult = await rdsPool.query('SELECT COUNT(*) as count FROM bundles');
+    const enabledResult = await rdsPool.query('SELECT COUNT(*) as count FROM bundles WHERE enabled = true');
+    const lastBundleResult = await rdsPool.query('SELECT * FROM bundles ORDER BY id DESC LIMIT 1');
+
+    const totalDeployments = parseInt(totalResult.rows[0]?.count || '0');
+    const enabledBundles = parseInt(enabledResult.rows[0]?.count || '0');
+    const lastBundle = lastBundleResult.rows[0];
+
+    return {
+      totalDeployments,
+      activeUsers: enabledBundles,
+      updateRate: totalDeployments ? Math.round((enabledBundles / totalDeployments) * 100) : 0,
+      lastDeployment: formatDate(lastBundle?.id),
+    };
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    const result = await dynamoDBClient.send(
+      new ScanCommand({
+        TableName: tableName,
+      })
+    );
+
+    const items = result.Items || [];
+    const totalDeployments = items.length;
+    const enabledBundles = items.filter((item: any) => item.enabled === true).length;
+
+    // Get last bundle
+    items.sort((a: any, b: any) => (b.id || '').localeCompare(a.id || ''));
+    const lastBundle = items[0];
+
+    return {
+      totalDeployments,
+      activeUsers: enabledBundles,
+      updateRate: totalDeployments ? Math.round((enabledBundles / totalDeployments) * 100) : 0,
+      lastDeployment: formatDate(lastBundle?.id),
+    };
+  }
+
   // Mock data
   return {
     totalDeployments: 127,
@@ -294,6 +471,47 @@ export async function rollbackDeployment(deploymentId: string) {
     return { success: true };
   }
 
+  if (DB_PROVIDER === 'aws-rds') {
+    const bundleResult = await rdsPool.query('SELECT * FROM bundles WHERE id = $1', [deploymentId]);
+    const bundle = bundleResult.rows[0];
+
+    if (!bundle) throw new Error('Bundle not found');
+
+    await rdsPool.query('UPDATE bundles SET enabled = $1 WHERE id = $2', [!bundle.enabled, deploymentId]);
+
+    return { success: true };
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { GetCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    // Get current bundle
+    const getResult = await dynamoDBClient.send(
+      new GetCommand({
+        TableName: tableName,
+        Key: { id: deploymentId },
+      })
+    );
+
+    const bundle = getResult.Item;
+    if (!bundle) throw new Error('Bundle not found');
+
+    // Toggle enabled state
+    await dynamoDBClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { id: deploymentId },
+        UpdateExpression: 'SET enabled = :enabled',
+        ExpressionAttributeValues: {
+          ':enabled': !bundle.enabled,
+        },
+      })
+    );
+
+    return { success: true };
+  }
+
   // For development, just return success
   return { success: true };
 }
@@ -321,6 +539,67 @@ export async function updateBundle(bundleId: string, updates: {
     return { success: true };
   }
 
+  if (DB_PROVIDER === 'aws-rds') {
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    let paramIndex = 1;
+
+    if (updates.message !== undefined) {
+      updateFields.push(`message = $${paramIndex++}`);
+      updateValues.push(updates.message);
+    }
+    if (updates.enabled !== undefined) {
+      updateFields.push(`enabled = $${paramIndex++}`);
+      updateValues.push(updates.enabled);
+    }
+    if (updates.forceUpdate !== undefined) {
+      updateFields.push(`should_force_update = $${paramIndex++}`);
+      updateValues.push(updates.forceUpdate);
+    }
+
+    if (updateFields.length === 0) return { success: true };
+
+    updateValues.push(bundleId);
+    const query = `UPDATE bundles SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`;
+
+    await rdsPool.query(query, updateValues);
+    return { success: true };
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    const updateExpressions: string[] = [];
+    const expressionAttributeValues: any = {};
+
+    if (updates.message !== undefined) {
+      updateExpressions.push('message = :message');
+      expressionAttributeValues[':message'] = updates.message;
+    }
+    if (updates.enabled !== undefined) {
+      updateExpressions.push('enabled = :enabled');
+      expressionAttributeValues[':enabled'] = updates.enabled;
+    }
+    if (updates.forceUpdate !== undefined) {
+      updateExpressions.push('should_force_update = :forceUpdate');
+      expressionAttributeValues[':forceUpdate'] = updates.forceUpdate;
+    }
+
+    if (updateExpressions.length === 0) return { success: true };
+
+    await dynamoDBClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { id: bundleId },
+        UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+        ExpressionAttributeValues: expressionAttributeValues,
+      })
+    );
+
+    return { success: true };
+  }
+
   // For development, just return success
   return { success: true };
 }
@@ -336,6 +615,25 @@ export async function deleteBundle(bundleId: string) {
       .eq('id', bundleId);
 
     if (error) throw error;
+    return { success: true };
+  }
+
+  if (DB_PROVIDER === 'aws-rds') {
+    await rdsPool.query('DELETE FROM bundles WHERE id = $1', [bundleId]);
+    return { success: true };
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    await dynamoDBClient.send(
+      new DeleteCommand({
+        TableName: tableName,
+        Key: { id: bundleId },
+      })
+    );
+
     return { success: true };
   }
 
@@ -375,6 +673,85 @@ export async function promoteBundle(bundleId: string, targetChannel: string, mov
         });
 
       if (insertError) throw insertError;
+    }
+
+    return { success: true };
+  }
+
+  if (DB_PROVIDER === 'aws-rds') {
+    if (move) {
+      await rdsPool.query('UPDATE bundles SET channel = $1 WHERE id = $2', [targetChannel, bundleId]);
+    } else {
+      // Copy: fetch the bundle, create a new one
+      const bundleResult = await rdsPool.query('SELECT * FROM bundles WHERE id = $1', [bundleId]);
+      const bundle = bundleResult.rows[0];
+
+      if (!bundle) throw new Error('Bundle not found');
+
+      // Create copy with new channel (omit id to let DB generate new one)
+      const { id, ...bundleData } = bundle;
+      await rdsPool.query(
+        `INSERT INTO bundles (platform, target_app_version, should_force_update, enabled,
+         file_hash, git_commit_hash, message, channel, fingerprint_hash, metadata, storage_uri)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          bundleData.platform,
+          bundleData.target_app_version,
+          bundleData.should_force_update,
+          bundleData.enabled,
+          bundleData.file_hash,
+          bundleData.git_commit_hash,
+          bundleData.message,
+          targetChannel,
+          bundleData.fingerprint_hash,
+          bundleData.metadata,
+          bundleData.storage_uri,
+        ]
+      );
+    }
+
+    return { success: true };
+  }
+
+  if (DB_PROVIDER === 'dynamodb') {
+    const { GetCommand, UpdateCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
+    const { randomUUID } = require('crypto');
+    const tableName = process.env.AWS_DYNAMODB_TABLE_NAME || 'hot-updater-bundles';
+
+    if (move) {
+      await dynamoDBClient.send(
+        new UpdateCommand({
+          TableName: tableName,
+          Key: { id: bundleId },
+          UpdateExpression: 'SET channel = :channel',
+          ExpressionAttributeValues: {
+            ':channel': targetChannel,
+          },
+        })
+      );
+    } else {
+      // Copy: fetch bundle and create copy with new channel
+      const getResult = await dynamoDBClient.send(
+        new GetCommand({
+          TableName: tableName,
+          Key: { id: bundleId },
+        })
+      );
+
+      const bundle = getResult.Item;
+      if (!bundle) throw new Error('Bundle not found');
+
+      // Create copy with new ID and channel
+      await dynamoDBClient.send(
+        new PutCommand({
+          TableName: tableName,
+          Item: {
+            ...bundle,
+            id: randomUUID(),
+            channel: targetChannel,
+          },
+        })
+      );
     }
 
     return { success: true };

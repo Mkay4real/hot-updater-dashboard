@@ -49,10 +49,6 @@ hot-updater-dashboard/
 │       └── rollback/[id]/route.ts        # POST rollback to version
 ├── lib/
 │   └── db.ts                             # Database utilities
-├── docs/
-│   ├── FILE-PLACEMENT-GUIDE.md           # Visual guide (reference)
-│   ├── QUICKSTART.md                     # 15-minute setup guide
-│   └── REACT-NATIVE-INTEGRATION-GUIDE.md # RN integration guide
 ├── public/                               # Static assets
 ├── .gitignore                            # Git ignore rules
 ├── .env.local                            # Environment variables (create from env.example)
@@ -68,9 +64,18 @@ hot-updater-dashboard/
 
 ### Database Layer Architecture
 
-The database layer (`lib/db.ts`) integrates with **Hot Updater's existing Supabase schema**. Hot Updater CLI automatically creates the required database tables when you run `npx hot-updater init` in your React Native project.
+The database layer ([lib/db.ts](lib/db.ts)) supports multiple database providers for flexibility:
 
-**Important**: This dashboard does NOT create its own tables. It reads from the `bundles` table that Hot Updater creates and manages. The database functions (`getDeployments`, `getBundles`, `getStats`, `rollbackDeployment`) transform Hot Updater's schema into the dashboard's display format. Mock data is provided as fallback for development without database setup.
+**Supported Providers:**
+- **Supabase** - Easiest setup, includes both storage and database
+- **AWS RDS** - PostgreSQL on AWS RDS for production workloads
+- **DynamoDB** - For serverless/Lambda@Edge deployments
+- **PostgreSQL** - Direct PostgreSQL connection
+- **Cloudflare D1** - Edge database for global performance
+
+The database layer integrates with **Hot Updater's existing schema**. Hot Updater CLI automatically creates the required database tables when you run `npx hot-updater init` in your React Native project.
+
+**Important**: This dashboard does NOT create its own tables. It reads from the `bundles` table that Hot Updater creates and manages. The database functions (`getDeployments`, `getBundles`, `getStats`, `rollbackDeployment`, `updateBundle`, `deleteBundle`, `promoteBundle`) transform Hot Updater's schema into the dashboard's display format. Mock data is provided as fallback for development without database setup.
 
 ### API Route Pattern
 
@@ -118,9 +123,9 @@ The component is approximately 500 lines and self-contained with no child compon
 
 ## Environment Configuration
 
-Copy `env.example` to `.env.local` and configure:
+Copy `env.example` to `.env.local` and configure based on your chosen database provider:
 
-**Required for Supabase:**
+**Supabase (Recommended for quick start):**
 ```env
 DB_PROVIDER=supabase
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
@@ -128,7 +133,29 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
 ```
 
-**Alternative providers:** Set `DB_PROVIDER=postgres` or `DB_PROVIDER=cloudflare-d1` and configure the corresponding connection variables.
+**AWS RDS (Production PostgreSQL):**
+```env
+DB_PROVIDER=aws-rds
+AWS_RDS_HOST=your-rds-instance.region.rds.amazonaws.com
+AWS_RDS_PORT=5432
+AWS_RDS_DATABASE=hotupdater
+AWS_RDS_USER=postgres
+AWS_RDS_PASSWORD=your-password
+AWS_RDS_SSL=true
+HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
+```
+
+**DynamoDB (Lambda@Edge/Serverless):**
+```env
+DB_PROVIDER=dynamodb
+AWS_DYNAMODB_REGION=us-east-1
+AWS_DYNAMODB_TABLE_NAME=hot-updater-bundles
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=your-secret-key
+HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
+```
+
+**Other providers:** Set `DB_PROVIDER=postgres` or `DB_PROVIDER=cloudflare-d1` and configure the corresponding connection variables in `.env.local`.
 
 ## Key Integration Points
 
@@ -146,27 +173,40 @@ The `HOT_UPDATER_PROJECT_PATH` environment variable must point to your React Nat
 
 **Important**: This dashboard uses Hot Updater's existing database schema. You don't need to create any tables manually.
 
-1. In your React Native project, run `npx hot-updater init` and select Supabase as your provider
-2. Hot Updater will automatically create the required `bundles` table and storage bucket in your Supabase project
-3. Use the same Supabase credentials (URL and anon key) in this dashboard's `.env.local` file
+1. In your React Native project, run `npx hot-updater init` and select your preferred provider
+2. Hot Updater will automatically create the required `bundles` table and storage bucket
+3. Use the same credentials in this dashboard's `.env.local` file with matching `DB_PROVIDER`
 4. The dashboard will automatically read from Hot Updater's `bundles` table
 
-See [lib/db.ts:308-341](lib/db.ts:308-341) for the complete Hot Updater schema reference.
+**Provider-Specific Setup:**
+- **Supabase**: Use the same project URL and anon key
+- **AWS RDS**: Ensure the RDS instance is accessible from where the dashboard runs
+- **DynamoDB**: Use the same table name and AWS credentials
+- **Cloudflare D1**: Use the same database ID and API token
+
+See [lib/db.ts](lib/db.ts) for the complete Hot Updater schema reference and provider implementations.
 
 ## Common Development Workflows
 
 **Initial Setup:**
 1. Set up Hot Updater in your React Native project first:
    - Run `npx hot-updater init` in your RN project
-   - Select Supabase as your provider
+   - Select your preferred provider (Supabase, AWS, etc.)
    - This creates the database tables and storage bucket
 2. Clone or download this dashboard repository
 3. Run `npm install` to install dependencies
 4. Copy `env.example` to `.env.local`
-5. Configure `.env.local` with the SAME Supabase credentials from step 1
-6. Set `HOT_UPDATER_PROJECT_PATH` to your React Native project path
-7. Start dev server with `npm run dev`
-8. Visit http://localhost:3000
+5. Configure `.env.local`:
+   - Set `DB_PROVIDER` to match your Hot Updater setup
+   - Add the SAME credentials you used in Hot Updater
+   - Set `HOT_UPDATER_PROJECT_PATH` to your React Native project path
+6. Start dev server with `npm run dev`
+7. Visit http://localhost:3000
+
+**Note:** If using AWS RDS or DynamoDB, install the required dependencies:
+```bash
+npm install pg @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+```
 
 **Adding New API Endpoints:**
 - Create new folder under `app/api/` with a `route.ts` file
