@@ -16,7 +16,7 @@ A production-ready, modern dashboard for managing Hot Updater (OTA) deployments 
 - 🎨 **Beautiful UI** - Modern gradient-based design with smooth animations
 - 🔒 **Production-Ready** - Security headers, error handling, and optimizations included
 - ⚡ **Fast & Responsive** - Optimized performance with Next.js 14 App Router
-- 🗄️ **Flexible Database** - Supports Supabase, PostgreSQL, or Cloudflare D1
+- 🗄️ **Flexible Database** - Supports Supabase, AWS RDS, DynamoDB, PostgreSQL, or Cloudflare D1
 
 ## 📸 Preview
 
@@ -34,8 +34,8 @@ The dashboard features:
 - **Styling**: Tailwind CSS 3.4
 - **UI Components**: Custom components with Lucide React icons
 - **Charts**: Recharts 2.12
-- **Database**: Supabase / PostgreSQL / Cloudflare D1
-- **Deployment**: Vercel (recommended), Netlify, or any Node.js host
+- **Database**: Supabase / AWS RDS / DynamoDB / PostgreSQL / Cloudflare D1
+- **Deployment**: Vercel (recommended), AWS Lambda@Edge, Netlify, or any Node.js host
 
 ## 📦 Installation
 
@@ -43,7 +43,7 @@ The dashboard features:
 
 - Node.js 20.x or later
 - npm, yarn, or pnpm
-- A Supabase account (or PostgreSQL/Cloudflare D1)
+- A database provider: Supabase, AWS RDS, DynamoDB, PostgreSQL, or Cloudflare D1
 - Hot Updater configured in your React Native project
 
 ### Quick Setup
@@ -67,84 +67,73 @@ Visit [http://localhost:3000](http://localhost:3000) to see your dashboard!
 
 ### Environment Configuration
 
-Edit `.env.local` with your settings:
+Edit `.env.local` with your settings based on your chosen database provider:
 
+**Supabase:**
 ```env
-# Database provider: supabase, postgres, or cloudflare-d1
 DB_PROVIDER=supabase
-
-# Supabase (recommended for quick start)
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-
-# Path to your React Native project with hot-updater.config.ts
 HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
 ```
 
-### Database Setup (Supabase)
-
-1. Create a [Supabase project](https://app.supabase.com)
-2. Go to SQL Editor and run the following:
-
-```sql
--- Deployments table
-CREATE TABLE deployments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  version TEXT NOT NULL,
-  platform TEXT NOT NULL CHECK (platform IN ('ios', 'android', 'all')),
-  channel TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('success', 'failed', 'pending')),
-  deployed_by TEXT,
-  bundle_size BIGINT,
-  downloads INTEGER DEFAULT 0,
-  deployed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Bundles table
-CREATE TABLE bundles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  version TEXT NOT NULL,
-  platform TEXT NOT NULL CHECK (platform IN ('ios', 'android')),
-  channel TEXT NOT NULL,
-  size BIGINT NOT NULL,
-  active BOOLEAN DEFAULT FALSE,
-  fingerprint TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- App users table (for tracking)
-CREATE TABLE app_users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_id TEXT UNIQUE NOT NULL,
-  platform TEXT NOT NULL,
-  app_version TEXT,
-  bundle_version TEXT,
-  last_update_check TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Update stats table
-CREATE TABLE update_stats (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  date DATE NOT NULL,
-  total_checks INTEGER DEFAULT 0,
-  successful_updates INTEGER DEFAULT 0,
-  failed_updates INTEGER DEFAULT 0,
-  adoption_rate DECIMAL(5,2) DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Indexes for performance
-CREATE INDEX idx_deployments_channel ON deployments(channel);
-CREATE INDEX idx_deployments_platform ON deployments(platform);
-CREATE INDEX idx_deployments_deployed_at ON deployments(deployed_at DESC);
-CREATE INDEX idx_bundles_active ON bundles(active);
-CREATE INDEX idx_app_users_bundle_version ON app_users(bundle_version);
+**AWS RDS:**
+```env
+DB_PROVIDER=aws-rds
+AWS_RDS_HOST=your-rds-instance.region.rds.amazonaws.com
+AWS_RDS_PORT=5432
+AWS_RDS_DATABASE=hotupdater
+AWS_RDS_USER=postgres
+AWS_RDS_PASSWORD=your-password
+AWS_RDS_SSL=true
+HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
 ```
 
-3. Copy your Project URL and anon key to `.env.local`
+**DynamoDB (for Lambda@Edge):**
+```env
+DB_PROVIDER=dynamodb
+AWS_DYNAMODB_REGION=us-east-1
+AWS_DYNAMODB_TABLE_NAME=hot-updater-bundles
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=your-secret-key
+HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
+```
+
+For AWS providers, install additional dependencies:
+```bash
+npm install pg @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+```
+
+### Database Setup
+
+**Important:** This dashboard uses Hot Updater's existing database schema. The tables are automatically created when you run `npx hot-updater init` in your React Native project.
+
+**Setup Steps:**
+
+1. **In your React Native project:**
+   ```bash
+   cd /path/to/your/react-native-project
+   npx hot-updater init
+   ```
+   Select your preferred database provider during initialization.
+
+2. **The `bundles` table will be automatically created with this schema:**
+   - `id`: UUID (UUIDv7 with embedded timestamp)
+   - `platform`: 'ios' or 'android'
+   - `channel`: Deployment channel ('development', 'staging', 'production')
+   - `enabled`: Boolean flag indicating if bundle is active
+   - `file_hash`: SHA256 hash of the bundle file
+   - `git_commit_hash`: Git commit when bundle was created
+   - `message`: Deployment message/notes
+   - `metadata`: JSONB field containing app_version and other data
+   - `storage_uri`: Location of bundle file in storage
+   - `fingerprint_hash`: Unique fingerprint for bundle identification
+   - `target_app_version`: Specific app version this bundle targets (nullable)
+   - `should_force_update`: Whether to force update on clients
+
+3. **Copy the same credentials to this dashboard's `.env.local`**
+
+For more details, see [lib/db.ts](lib/db.ts).
 
 ## 📁 Project Structure
 
@@ -167,10 +156,7 @@ hot-updater-dashboard/
 │           └── [id]/
 │               └── route.ts         # POST rollback
 ├── lib/
-│   └── db.ts                         # Database utilities
-├── docs/
-│   ├── FILE-PLACEMENT-GUIDE.md       # Visual guide
-│   └── REACT-NATIVE-INTEGRATION-GUIDE.md  # RN integration
+│   └── db.ts                         # Database utilities (multi-provider support)
 ├── public/                           # Static assets
 ├── .env.local                        # Environment variables (create from env.example)
 ├── .gitignore                        # Git ignore rules
@@ -312,16 +298,32 @@ className="bg-gradient-to-r from-green-500 to-teal-500"
 Switch between providers in `.env.local`:
 
 ```env
-# Supabase (easiest)
+# Supabase (easiest, recommended for quick start)
 DB_PROVIDER=supabase
+
+# AWS RDS (production PostgreSQL)
+DB_PROVIDER=aws-rds
+
+# DynamoDB (serverless/Lambda@Edge)
+DB_PROVIDER=dynamodb
 
 # PostgreSQL (self-hosted)
 DB_PROVIDER=postgres
 DATABASE_URL=postgresql://...
 
-# Cloudflare D1 (edge)
+# Cloudflare D1 (edge database)
 DB_PROVIDER=cloudflare-d1
 ```
+
+**Provider Comparison:**
+
+| Provider | Best For | Setup Difficulty | Cost |
+|----------|----------|------------------|------|
+| Supabase | Quick start, prototypes | Easy | Free tier available |
+| AWS RDS | Production workloads | Medium | Pay per hour |
+| DynamoDB | Serverless/Edge deployments | Medium | Pay per request |
+| PostgreSQL | Self-hosted control | Medium | Infrastructure cost |
+| Cloudflare D1 | Global edge performance | Medium | Free tier available |
 
 ## 📊 API Reference
 
@@ -395,10 +397,9 @@ Rollback to specific deployment
 
 ## 📚 Documentation
 
-- [Quick Start Guide](QUICKSTART.md) - 15-minute setup
-- [File Placement Guide](docs/FILE-PLACEMENT-GUIDE.md) - Visual structure guide
-- [React Native Integration](docs/REACT-NATIVE-INTEGRATION-GUIDE.md) - RN setup
-- [Hot Updater Docs](https://hot-updater.dev) - Official documentation
+- [CLAUDE.md](CLAUDE.md) - Detailed project architecture and development guide
+- [Hot Updater Docs](https://hot-updater.dev) - Official Hot Updater documentation
+- [Database Layer](lib/db.ts) - Multi-provider database implementation
 
 ## 🤝 Contributing
 
