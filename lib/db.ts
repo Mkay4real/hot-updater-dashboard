@@ -16,6 +16,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // AWS RDS PostgreSQL Configuration
+// Note: Uses Hot Updater's officially supported PostgreSQL provider
 let rdsPool: any = null;
 if (DB_PROVIDER === 'aws-rds') {
   const { Pool } = require('pg');
@@ -32,7 +33,26 @@ if (DB_PROVIDER === 'aws-rds') {
   });
 }
 
-// DynamoDB Configuration (for Lambda@Edge)
+// AWS S3 Configuration (for bundle file storage with aws-rds)
+// Hot Updater stores bundle files in S3 and metadata in RDS
+let s3Client: any = null;
+if (DB_PROVIDER === 'aws-rds' && process.env.AWS_S3_BUCKET_NAME) {
+  const { S3Client } = require('@aws-sdk/client-s3');
+
+  s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    },
+  });
+}
+
+// ⚠️ EXPERIMENTAL: DynamoDB Configuration
+// WARNING: DynamoDB is NOT officially supported by Hot Updater.
+// This is a custom implementation for this dashboard only.
+// Hot Updater officially supports: Supabase, PostgreSQL, Cloudflare D1, and Firebase.
+// Use at your own risk - you'll need to manually create and manage the DynamoDB table.
 let dynamoDBClient: any = null;
 if (DB_PROVIDER === 'dynamodb') {
   const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
@@ -93,17 +113,32 @@ export async function getDeployments() {
       'SELECT * FROM bundles ORDER BY id DESC LIMIT 50'
     );
 
-    return result.rows.map((row: any) => ({
-      id: row.id,
-      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
-      platform: row.platform,
-      channel: row.channel || 'production',
-      status: row.enabled ? 'success' : 'failed',
-      deployedAt: formatDate(row.id),
-      deployedBy: row.message || 'System',
-      bundleSize: 'N/A',
-      downloads: 0,
-    }));
+    // Fetch bundle sizes from S3 if S3 client is configured
+    const deploymentsWithSizes = await Promise.all(
+      result.rows.map(async (row: any) => {
+        let bundleSize = 'N/A';
+
+        // Try to get actual size from S3 if storage_uri exists
+        if (s3Client && row.storage_uri) {
+          bundleSize = await getBundleSizeFromS3(row.storage_uri);
+        }
+
+        return {
+          id: row.id,
+          version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+          platform: row.platform,
+          channel: row.channel || 'production',
+          status: row.enabled ? 'success' : 'failed',
+          deployedAt: formatDate(row.id),
+          deployedBy: row.message || 'System',
+          bundleSize,
+          downloads: 0, // Hot Updater doesn't track downloads in bundles table
+          storageUri: row.storage_uri, // Include for potential download links
+        };
+      })
+    );
+
+    return deploymentsWithSizes;
   }
 
   if (DB_PROVIDER === 'dynamodb') {
@@ -218,21 +253,36 @@ export async function getBundles() {
       'SELECT * FROM bundles ORDER BY id DESC LIMIT 20'
     );
 
-    return result.rows.map((row: any) => ({
-      id: row.id,
-      version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
-      platform: row.platform,
-      channel: row.channel || 'production',
-      createdAt: formatDate(row.id),
-      size: 'N/A',
-      active: row.enabled,
-      enabled: row.enabled,
-      forceUpdate: row.should_force_update,
-      message: row.message,
-      fingerprintHash: row.fingerprint_hash,
-      targetAppVersion: row.target_app_version,
-      commitHash: row.git_commit_hash,
-    }));
+    // Fetch bundle sizes from S3 if S3 client is configured
+    const bundlesWithSizes = await Promise.all(
+      result.rows.map(async (row: any) => {
+        let size = 'N/A';
+
+        // Try to get actual size from S3 if storage_uri exists
+        if (s3Client && row.storage_uri) {
+          size = await getBundleSizeFromS3(row.storage_uri);
+        }
+
+        return {
+          id: row.id,
+          version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+          platform: row.platform,
+          channel: row.channel || 'production',
+          createdAt: formatDate(row.id),
+          size,
+          active: row.enabled,
+          enabled: row.enabled,
+          forceUpdate: row.should_force_update,
+          message: row.message,
+          fingerprintHash: row.fingerprint_hash,
+          targetAppVersion: row.target_app_version,
+          commitHash: row.git_commit_hash,
+          storageUri: row.storage_uri, // Include for download URLs
+        };
+      })
+    );
+
+    return bundlesWithSizes;
   }
 
   if (DB_PROVIDER === 'dynamodb') {
@@ -808,6 +858,87 @@ function formatBytes(bytes: number | undefined): string {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+// ============================================
+// AWS S3 HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Get bundle size from S3 storage_uri
+ * Extracts the S3 key from storage_uri and fetches file size
+ */
+async function getBundleSizeFromS3(storageUri: string): Promise<string> {
+  if (!s3Client || !storageUri) return 'N/A';
+
+  try {
+    const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+
+    // Extract S3 key from storage_uri
+    // storage_uri format: s3://bucket-name/path/to/file.zip or https://bucket.s3.region.amazonaws.com/path/to/file.zip
+    let s3Key = '';
+
+    if (storageUri.startsWith('s3://')) {
+      // Format: s3://bucket-name/path/to/file.zip
+      s3Key = storageUri.split('/').slice(3).join('/');
+    } else if (storageUri.includes('.s3.') || storageUri.includes('.amazonaws.com')) {
+      // Format: https://bucket.s3.region.amazonaws.com/path/to/file.zip
+      const url = new URL(storageUri);
+      s3Key = url.pathname.substring(1); // Remove leading /
+    } else {
+      return 'N/A';
+    }
+
+    const command = new HeadObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET_NAME,
+      Key: s3Key,
+    });
+
+    const response = await s3Client.send(command);
+    return formatBytes(response.ContentLength);
+  } catch (error) {
+    console.error('Error fetching S3 bundle size:', error);
+    return 'N/A';
+  }
+}
+
+/**
+ * Generate presigned URL for downloading bundle from S3
+ * Used for direct downloads from the dashboard
+ * @param storageUri - The S3 storage URI from the bundles table
+ * @param expiresIn - URL expiration time in seconds (default: 3600 = 1 hour)
+ * @returns Presigned download URL or null if S3 is not configured
+ */
+export async function generateS3DownloadUrl(storageUri: string, expiresIn: number = 3600): Promise<string | null> {
+  if (!s3Client || !storageUri) return null;
+
+  try {
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+    // Extract S3 key from storage_uri
+    let s3Key = '';
+
+    if (storageUri.startsWith('s3://')) {
+      s3Key = storageUri.split('/').slice(3).join('/');
+    } else if (storageUri.includes('.s3.') || storageUri.includes('.amazonaws.com')) {
+      const url = new URL(storageUri);
+      s3Key = url.pathname.substring(1);
+    } else {
+      return null;
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.AWS_S3_BUCKET_NAME,
+      Key: s3Key,
+    });
+
+    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn });
+    return signedUrl;
+  } catch (error) {
+    console.error('Error generating S3 presigned URL:', error);
+    return null;
+  }
 }
 
 // ============================================

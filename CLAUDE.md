@@ -66,12 +66,20 @@ hot-updater-dashboard/
 
 The database layer ([lib/db.ts](lib/db.ts)) supports multiple database providers for flexibility:
 
-**Supported Providers:**
+**Officially Supported Providers** (by Hot Updater):
 - **Supabase** - Easiest setup, includes both storage and database
-- **AWS RDS** - PostgreSQL on AWS RDS for production workloads
-- **DynamoDB** - For serverless/Lambda@Edge deployments
-- **PostgreSQL** - Direct PostgreSQL connection
+- **PostgreSQL** - Direct PostgreSQL connection (including AWS RDS PostgreSQL)
 - **Cloudflare D1** - Edge database for global performance
+- **Firebase** - Firebase Realtime Database
+
+**Experimental Providers** (dashboard-only, not officially supported):
+- **DynamoDB** ⚠️ - Custom implementation for serverless deployments. Requires manual table setup. Use with caution.
+
+**Note on AWS:**
+- **AWS S3**: Bundle file storage (requires `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`)
+- **AWS RDS**: PostgreSQL database for metadata (requires `pg` package)
+- **Lambda@Edge**: Optional CDN/edge delivery (not required for dashboard)
+- **Architecture**: RDS stores metadata, S3 stores bundle files, dashboard fetches sizes from S3
 
 The database layer integrates with **Hot Updater's existing schema**. Hot Updater CLI automatically creates the required database tables when you run `npx hot-updater init` in your React Native project.
 
@@ -133,19 +141,30 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
 ```
 
-**AWS RDS (Production PostgreSQL):**
+**AWS RDS + S3 (Officially Supported):**
 ```env
 DB_PROVIDER=aws-rds
+
+# RDS PostgreSQL (for metadata/database)
 AWS_RDS_HOST=your-rds-instance.region.rds.amazonaws.com
 AWS_RDS_PORT=5432
 AWS_RDS_DATABASE=hotupdater
 AWS_RDS_USER=postgres
 AWS_RDS_PASSWORD=your-password
 AWS_RDS_SSL=true
+
+# S3 (for bundle file storage)
+AWS_REGION=us-east-1
+AWS_S3_BUCKET_NAME=hot-updater-bundles
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=your-secret-key
+
 HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
 ```
 
-**DynamoDB (Lambda@Edge/Serverless):**
+**Note**: The AWS setup uses RDS for database (metadata) and S3 for storage (bundle files). Lambda@Edge is optional for edge delivery.
+
+**DynamoDB (⚠️ EXPERIMENTAL - Not officially supported by Hot Updater):**
 ```env
 DB_PROVIDER=dynamodb
 AWS_DYNAMODB_REGION=us-east-1
@@ -154,6 +173,7 @@ AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=your-secret-key
 HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
 ```
+> **Warning**: DynamoDB support is experimental and not part of Hot Updater's official plugins. You must manually create and manage the DynamoDB table with the correct schema. Consider using an officially supported provider for production.
 
 **Other providers:** Set `DB_PROVIDER=postgres` or `DB_PROVIDER=cloudflare-d1` and configure the corresponding connection variables in `.env.local`.
 
@@ -179,10 +199,11 @@ The `HOT_UPDATER_PROJECT_PATH` environment variable must point to your React Nat
 4. The dashboard will automatically read from Hot Updater's `bundles` table
 
 **Provider-Specific Setup:**
-- **Supabase**: Use the same project URL and anon key
-- **AWS RDS**: Ensure the RDS instance is accessible from where the dashboard runs
-- **DynamoDB**: Use the same table name and AWS credentials
-- **Cloudflare D1**: Use the same database ID and API token
+- **Supabase**: Use the same project URL and anon key from Hot Updater init
+- **AWS RDS**: Ensure the RDS PostgreSQL instance is accessible from where the dashboard runs. Uses Hot Updater's PostgreSQL plugin.
+- **Cloudflare D1**: Use the same database ID and API token from Hot Updater init
+- **Firebase**: Use Firebase Realtime Database credentials from Hot Updater init
+- **DynamoDB (⚠️ Experimental)**: Manually create table with Hot Updater schema. Not created by `npx hot-updater init`.
 
 See [lib/db.ts](lib/db.ts) for the complete Hot Updater schema reference and provider implementations.
 
@@ -203,10 +224,19 @@ See [lib/db.ts](lib/db.ts) for the complete Hot Updater schema reference and pro
 6. Start dev server with `npm run dev`
 7. Visit http://localhost:3000
 
-**Note:** If using AWS RDS or DynamoDB, install the required dependencies:
+**Note:** If using AWS providers, install the required dependencies:
 ```bash
-npm install pg @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+# For AWS RDS + S3 (Recommended)
+npm install pg @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+
+# For AWS DynamoDB (Experimental)
+npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
 ```
+
+**AWS S3 Features Enabled:**
+- ✅ Automatic bundle size fetching from S3
+- ✅ Presigned download URL generation
+- ✅ Support for both `s3://` and `https://` storage URI formats
 
 **Adding New API Endpoints:**
 - Create new folder under `app/api/` with a `route.ts` file
