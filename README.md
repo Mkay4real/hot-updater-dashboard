@@ -16,7 +16,7 @@ A production-ready, modern dashboard for managing Hot Updater (OTA) deployments 
 - 🎨 **Beautiful UI** - Modern gradient-based design with smooth animations
 - 🔒 **Production-Ready** - Security headers, error handling, and optimizations included
 - ⚡ **Fast & Responsive** - Optimized performance with Next.js 14 App Router
-- 🗄️ **Flexible Database** - Supports Supabase, AWS RDS, DynamoDB, PostgreSQL, or Cloudflare D1
+- 🗄️ **Flexible Database** - Supports Supabase, AWS RDS (PostgreSQL), Cloudflare D1, Firebase, and experimental DynamoDB
 
 ## 📸 Preview
 
@@ -34,7 +34,8 @@ The dashboard features:
 - **Styling**: Tailwind CSS 3.4
 - **UI Components**: Custom components with Lucide React icons
 - **Charts**: Recharts 2.12
-- **Database**: Supabase / AWS RDS / DynamoDB / PostgreSQL / Cloudflare D1
+- **Database**: Supabase / AWS RDS (PostgreSQL) / Cloudflare D1 / Firebase / PostgreSQL
+- **Experimental**: DynamoDB (not officially supported by Hot Updater)
 - **Deployment**: Vercel (recommended), AWS Lambda@Edge, Netlify, or any Node.js host
 
 ## 📦 Installation
@@ -43,7 +44,7 @@ The dashboard features:
 
 - Node.js 20.x or later
 - npm, yarn, or pnpm
-- A database provider: Supabase, AWS RDS, DynamoDB, PostgreSQL, or Cloudflare D1
+- A database provider: Supabase (recommended), AWS RDS, PostgreSQL, Cloudflare D1, or Firebase
 - Hot Updater configured in your React Native project
 
 ### Quick Setup
@@ -77,19 +78,39 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
 ```
 
-**AWS RDS:**
+**AWS RDS + S3 (Officially Supported):**
 ```env
 DB_PROVIDER=aws-rds
+
+# RDS PostgreSQL - for metadata/database
 AWS_RDS_HOST=your-rds-instance.region.rds.amazonaws.com
 AWS_RDS_PORT=5432
 AWS_RDS_DATABASE=hotupdater
 AWS_RDS_USER=postgres
 AWS_RDS_PASSWORD=your-password
 AWS_RDS_SSL=true
+
+# S3 - for bundle file storage (enables bundle size display)
+AWS_REGION=us-east-1
+AWS_S3_BUCKET_NAME=hot-updater-bundles
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=your-secret-key
+
 HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
 ```
 
-**DynamoDB (for Lambda@Edge):**
+> **Architecture**: Hot Updater uses RDS (PostgreSQL) for database and S3 for bundle storage. Lambda@Edge is optional for edge delivery.
+
+**Cloudflare D1 (Officially Supported):**
+```env
+DB_PROVIDER=cloudflare-d1
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_API_TOKEN=your-api-token
+CLOUDFLARE_D1_DATABASE_ID=your-database-id
+HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
+```
+
+**DynamoDB (⚠️ EXPERIMENTAL - Use with caution):**
 ```env
 DB_PROVIDER=dynamodb
 AWS_DYNAMODB_REGION=us-east-1
@@ -98,11 +119,21 @@ AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=your-secret-key
 HOT_UPDATER_PROJECT_PATH=/path/to/your/react-native-project
 ```
+> **⚠️ Warning**: DynamoDB is NOT officially supported by Hot Updater. This is a custom implementation that requires manual table creation. Use officially supported providers for production deployments.
 
-For AWS providers, install additional dependencies:
+**For AWS providers**, install additional dependencies:
+
 ```bash
-npm install pg @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+# AWS RDS + S3 (Recommended)
+npm install pg @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+
+# AWS DynamoDB (Experimental)
+npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
 ```
+
+**AWS IAM Permissions Required:**
+- **RDS**: Database connection permissions
+- **S3**: `s3:GetObject`, `s3:HeadObject` (for reading bundle sizes and generating download URLs)
 
 ### Database Setup
 
@@ -317,13 +348,18 @@ DB_PROVIDER=cloudflare-d1
 
 **Provider Comparison:**
 
-| Provider | Best For | Setup Difficulty | Cost |
-|----------|----------|------------------|------|
-| Supabase | Quick start, prototypes | Easy | Free tier available |
-| AWS RDS | Production workloads | Medium | Pay per hour |
-| DynamoDB | Serverless/Edge deployments | Medium | Pay per request |
-| PostgreSQL | Self-hosted control | Medium | Infrastructure cost |
-| Cloudflare D1 | Global edge performance | Medium | Free tier available |
+| Provider | Official Support | Best For | Setup Difficulty | Cost |
+|----------|-----------------|----------|------------------|------|
+| **Supabase** | ✅ Yes | Quick start, prototypes | Easy | Free tier available |
+| **PostgreSQL** | ✅ Yes | Self-hosted control | Medium | Infrastructure cost |
+| **AWS RDS** | ✅ Yes (PostgreSQL) | Production workloads | Medium | Pay per hour |
+| **Cloudflare D1** | ✅ Yes | Global edge performance | Medium | Free tier available |
+| **Firebase** | ✅ Yes | Google Cloud ecosystem | Medium | Pay as you go |
+| **DynamoDB** | ⚠️ **Experimental** | Custom serverless setups | Hard | Pay per request |
+
+**Note**: "Official Support" means supported by Hot Updater's plugin system. Experimental providers are custom implementations for this dashboard only.
+
+**Recommended for Production**: Supabase, AWS RDS (PostgreSQL), or Cloudflare D1
 
 ## 📊 API Reference
 
