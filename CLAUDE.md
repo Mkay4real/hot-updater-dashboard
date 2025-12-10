@@ -15,18 +15,23 @@ This is a **production-ready Next.js 14 dashboard** for managing Hot Updater (OT
 
 ## Development Commands
 
+**Note:** This project uses **yarn** as the package manager. Always use `yarn` for installing dependencies.
+
 ```bash
+# Install dependencies
+yarn
+
 # Development server (http://localhost:3000)
-npm run dev
+yarn dev
 
 # Build for production
-npm run build
+yarn build
 
 # Start production server
-npm run start
+yarn start
 
 # Run linter
-npm run lint
+yarn lint
 ```
 
 ## Project Architecture
@@ -215,22 +220,22 @@ See [lib/db.ts](lib/db.ts) for the complete Hot Updater schema reference and pro
    - Select your preferred provider (Supabase, AWS, etc.)
    - This creates the database tables and storage bucket
 2. Clone or download this dashboard repository
-3. Run `npm install` to install dependencies
+3. Run `yarn` to install dependencies
 4. Copy `env.example` to `.env.local`
 5. Configure `.env.local`:
    - Set `DB_PROVIDER` to match your Hot Updater setup
    - Add the SAME credentials you used in Hot Updater
    - Set `HOT_UPDATER_PROJECT_PATH` to your React Native project path
-6. Start dev server with `npm run dev`
+6. Start dev server with `yarn dev`
 7. Visit http://localhost:3000
 
 **Note:** If using AWS providers, install the required dependencies:
 ```bash
 # For AWS RDS + S3 (Recommended)
-npm install pg @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+yarn add pg @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 
 # For AWS DynamoDB (Experimental)
-npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+yarn add @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
 ```
 
 **AWS S3 Features Enabled:**
