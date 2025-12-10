@@ -123,6 +123,12 @@ export async function getBundles() {
       createdAt: formatDate(row.id), // UUIDv7 contains timestamp
       size: 'N/A', // Size info in storage_uri, not directly queryable
       active: row.enabled,
+      enabled: row.enabled,
+      forceUpdate: row.should_force_update,
+      message: row.message,
+      fingerprintHash: row.fingerprint_hash,
+      targetAppVersion: row.target_app_version,
+      commitHash: row.git_commit_hash,
     }));
   }
 
@@ -136,6 +142,12 @@ export async function getBundles() {
       createdAt: '2 hours ago',
       size: '2.3 MB',
       active: true,
+      enabled: true,
+      forceUpdate: false,
+      message: 'Production release v1.2.5',
+      fingerprintHash: 'abc123def456',
+      targetAppVersion: '1.2.5',
+      commitHash: 'a1b2c3d',
     },
     {
       id: '2',
@@ -145,6 +157,12 @@ export async function getBundles() {
       createdAt: '2 hours ago',
       size: '2.1 MB',
       active: true,
+      enabled: true,
+      forceUpdate: false,
+      message: 'Production release v1.2.5',
+      fingerprintHash: 'xyz789uvw012',
+      targetAppVersion: '1.2.5',
+      commitHash: 'a1b2c3d',
     },
     {
       id: '3',
@@ -154,6 +172,12 @@ export async function getBundles() {
       createdAt: '1 day ago',
       size: '2.2 MB',
       active: false,
+      enabled: false,
+      forceUpdate: false,
+      message: 'Staging test',
+      fingerprintHash: 'def456ghi789',
+      targetAppVersion: '1.2.4',
+      commitHash: 'b2c3d4e',
     },
     {
       id: '4',
@@ -163,6 +187,12 @@ export async function getBundles() {
       createdAt: '1 day ago',
       size: '2.0 MB',
       active: false,
+      enabled: false,
+      forceUpdate: true,
+      message: 'Critical fix',
+      fingerprintHash: 'ghi789jkl012',
+      targetAppVersion: '1.2.4',
+      commitHash: 'b2c3d4e',
     },
     {
       id: '5',
@@ -172,6 +202,12 @@ export async function getBundles() {
       createdAt: '3 days ago',
       size: '2.0 MB',
       active: false,
+      enabled: true,
+      forceUpdate: false,
+      message: 'Previous release',
+      fingerprintHash: 'jkl012mno345',
+      targetAppVersion: '1.2.3',
+      commitHash: 'c3d4e5f',
     },
     {
       id: '6',
@@ -181,6 +217,12 @@ export async function getBundles() {
       createdAt: '3 days ago',
       size: '1.9 MB',
       active: false,
+      enabled: true,
+      forceUpdate: false,
+      message: 'Previous release',
+      fingerprintHash: 'mno345pqr678',
+      targetAppVersion: '1.2.3',
+      commitHash: 'c3d4e5f',
     },
   ];
 }
@@ -248,6 +290,92 @@ export async function rollbackDeployment(deploymentId: string) {
       .eq('id', deploymentId);
 
     if (updateError) throw updateError;
+
+    return { success: true };
+  }
+
+  // For development, just return success
+  return { success: true };
+}
+
+/**
+ * Update bundle settings (enabled, force_update, message)
+ */
+export async function updateBundle(bundleId: string, updates: {
+  message?: string;
+  enabled?: boolean;
+  forceUpdate?: boolean;
+}) {
+  if (DB_PROVIDER === 'supabase') {
+    const updateData: any = {};
+    if (updates.message !== undefined) updateData.message = updates.message;
+    if (updates.enabled !== undefined) updateData.enabled = updates.enabled;
+    if (updates.forceUpdate !== undefined) updateData.should_force_update = updates.forceUpdate;
+
+    const { error } = await supabase
+      .from('bundles')
+      .update(updateData)
+      .eq('id', bundleId);
+
+    if (error) throw error;
+    return { success: true };
+  }
+
+  // For development, just return success
+  return { success: true };
+}
+
+/**
+ * Delete a bundle
+ */
+export async function deleteBundle(bundleId: string) {
+  if (DB_PROVIDER === 'supabase') {
+    const { error } = await supabase
+      .from('bundles')
+      .delete()
+      .eq('id', bundleId);
+
+    if (error) throw error;
+    return { success: true };
+  }
+
+  // For development, just return success
+  return { success: true };
+}
+
+/**
+ * Promote/Move bundle to a different channel
+ */
+export async function promoteBundle(bundleId: string, targetChannel: string, move: boolean) {
+  if (DB_PROVIDER === 'supabase') {
+    if (move) {
+      // Move: update the existing bundle's channel
+      const { error } = await supabase
+        .from('bundles')
+        .update({ channel: targetChannel })
+        .eq('id', bundleId);
+
+      if (error) throw error;
+    } else {
+      // Copy: fetch the bundle, create a new one with new channel
+      const { data: bundle, error: fetchError } = await supabase
+        .from('bundles')
+        .select('*')
+        .eq('id', bundleId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const { error: insertError } = await supabase
+        .from('bundles')
+        .insert({
+          ...bundle,
+          id: undefined, // Let database generate new UUID
+          channel: targetChannel,
+        });
+
+      if (insertError) throw insertError;
+    }
 
     return { success: true };
   }
