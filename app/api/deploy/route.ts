@@ -7,7 +7,7 @@ const execPromise = promisify(exec);
 
 export async function POST(request: Request) {
   try {
-    const { platform, channel } = await request.json();
+    const { platform, channel, branch } = await request.json();
 
     // Validate inputs
     if (!platform || !channel) {
@@ -37,10 +37,13 @@ export async function POST(request: Request) {
     // Execute hot-updater deploy command
     let output = '';
 
+    // Optionally checkout branch before deploying
+    const branchPrefix = branch ? `git checkout ${branch} && ` : '';
+
     if (platform === 'all') {
       // Deploy to both platforms sequentially
-      const iosCommand = `cd ${projectPath} && npx hot-updater deploy -p ios -c ${channel}`;
-      const androidCommand = `cd ${projectPath} && npx hot-updater deploy -p android -c ${channel}`;
+      const iosCommand = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p ios -c ${channel}`;
+      const androidCommand = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p android -c ${channel}`;
 
       // Deploy to iOS first
       const iosResult = await execPromise(iosCommand, {
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
       output += `Android Deployment:\n${androidResult.stdout}`;
     } else {
       // Deploy to single platform
-      const command = `cd ${projectPath} && npx hot-updater deploy -p ${platform} -c ${channel}`;
+      const command = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p ${platform} -c ${channel}`;
       const { stdout, stderr } = await execPromise(command, {
         timeout: 300000, // 5 minute timeout
       });
