@@ -109,36 +109,41 @@ export async function getDeployments() {
   }
 
   if (DB_PROVIDER === 'aws-rds') {
-    const result = await rdsPool.query(
-      'SELECT * FROM bundles ORDER BY id DESC LIMIT 50'
-    );
+    try {
+      const result = await rdsPool.query(
+        'SELECT * FROM bundles ORDER BY id DESC LIMIT 50'
+      );
 
-    // Fetch bundle sizes from S3 if S3 client is configured
-    const deploymentsWithSizes = await Promise.all(
-      result.rows.map(async (row: any) => {
-        let bundleSize = 'N/A';
+      // Fetch bundle sizes from S3 if S3 client is configured
+      const deploymentsWithSizes = await Promise.all(
+        result.rows.map(async (row: any) => {
+          let bundleSize = 'N/A';
 
-        // Try to get actual size from S3 if storage_uri exists
-        if (s3Client && row.storage_uri) {
-          bundleSize = await getBundleSizeFromS3(row.storage_uri);
-        }
+          // Try to get actual size from S3 if storage_uri exists
+          if (s3Client && row.storage_uri) {
+            bundleSize = await getBundleSizeFromS3(row.storage_uri);
+          }
 
-        return {
-          id: row.id,
-          version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
-          platform: row.platform,
-          channel: row.channel || 'production',
-          status: row.enabled ? 'success' : 'failed',
-          deployedAt: formatDate(row.id),
-          deployedBy: row.message || 'System',
-          bundleSize,
-          downloads: 0, // Hot Updater doesn't track downloads in bundles table
-          storageUri: row.storage_uri, // Include for potential download links
-        };
-      })
-    );
+          return {
+            id: row.id,
+            version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+            platform: row.platform,
+            channel: row.channel || 'production',
+            status: row.enabled ? 'success' : 'failed',
+            deployedAt: formatDate(row.id),
+            deployedBy: row.message || 'System',
+            bundleSize,
+            downloads: 0, // Hot Updater doesn't track downloads in bundles table
+            storageUri: row.storage_uri, // Include for potential download links
+          };
+        })
+      );
 
-    return deploymentsWithSizes;
+      return deploymentsWithSizes;
+    } catch (error) {
+      console.warn('[AWS RDS] Connection failed, falling back to mock data:', error);
+      // Fall through to mock data below
+    }
   }
 
   if (DB_PROVIDER === 'dynamodb') {
@@ -249,40 +254,45 @@ export async function getBundles() {
   }
 
   if (DB_PROVIDER === 'aws-rds') {
-    const result = await rdsPool.query(
-      'SELECT * FROM bundles ORDER BY id DESC LIMIT 20'
-    );
+    try {
+      const result = await rdsPool.query(
+        'SELECT * FROM bundles ORDER BY id DESC LIMIT 20'
+      );
 
-    // Fetch bundle sizes from S3 if S3 client is configured
-    const bundlesWithSizes = await Promise.all(
-      result.rows.map(async (row: any) => {
-        let size = 'N/A';
+      // Fetch bundle sizes from S3 if S3 client is configured
+      const bundlesWithSizes = await Promise.all(
+        result.rows.map(async (row: any) => {
+          let size = 'N/A';
 
-        // Try to get actual size from S3 if storage_uri exists
-        if (s3Client && row.storage_uri) {
-          size = await getBundleSizeFromS3(row.storage_uri);
-        }
+          // Try to get actual size from S3 if storage_uri exists
+          if (s3Client && row.storage_uri) {
+            size = await getBundleSizeFromS3(row.storage_uri);
+          }
 
-        return {
-          id: row.id,
-          version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
-          platform: row.platform,
-          channel: row.channel || 'production',
-          createdAt: formatDate(row.id),
-          size,
-          active: row.enabled,
-          enabled: row.enabled,
-          forceUpdate: row.should_force_update,
-          message: row.message,
-          fingerprintHash: row.fingerprint_hash,
-          targetAppVersion: row.target_app_version,
-          commitHash: row.git_commit_hash,
-          storageUri: row.storage_uri, // Include for download URLs
-        };
-      })
-    );
+          return {
+            id: row.id,
+            version: row.metadata?.app_version || row.git_commit_hash?.substring(0, 7) || 'unknown',
+            platform: row.platform,
+            channel: row.channel || 'production',
+            createdAt: formatDate(row.id),
+            size,
+            active: row.enabled,
+            enabled: row.enabled,
+            forceUpdate: row.should_force_update,
+            message: row.message,
+            fingerprintHash: row.fingerprint_hash,
+            targetAppVersion: row.target_app_version,
+            commitHash: row.git_commit_hash,
+            storageUri: row.storage_uri, // Include for download URLs
+          };
+        })
+      );
 
-    return bundlesWithSizes;
+      return bundlesWithSizes;
+    } catch (error) {
+      console.warn('[AWS RDS] Connection failed, falling back to mock data:', error);
+      // Fall through to mock data below
+    }
   }
 
   if (DB_PROVIDER === 'dynamodb') {
@@ -444,20 +454,25 @@ export async function getStats() {
   }
 
   if (DB_PROVIDER === 'aws-rds') {
-    const totalResult = await rdsPool.query('SELECT COUNT(*) as count FROM bundles');
-    const enabledResult = await rdsPool.query('SELECT COUNT(*) as count FROM bundles WHERE enabled = true');
-    const lastBundleResult = await rdsPool.query('SELECT * FROM bundles ORDER BY id DESC LIMIT 1');
+    try {
+      const totalResult = await rdsPool.query('SELECT COUNT(*) as count FROM bundles');
+      const enabledResult = await rdsPool.query('SELECT COUNT(*) as count FROM bundles WHERE enabled = true');
+      const lastBundleResult = await rdsPool.query('SELECT * FROM bundles ORDER BY id DESC LIMIT 1');
 
-    const totalDeployments = parseInt(totalResult.rows[0]?.count || '0');
-    const enabledBundles = parseInt(enabledResult.rows[0]?.count || '0');
-    const lastBundle = lastBundleResult.rows[0];
+      const totalDeployments = parseInt(totalResult.rows[0]?.count || '0');
+      const enabledBundles = parseInt(enabledResult.rows[0]?.count || '0');
+      const lastBundle = lastBundleResult.rows[0];
 
-    return {
-      totalDeployments,
-      activeUsers: enabledBundles,
-      updateRate: totalDeployments ? Math.round((enabledBundles / totalDeployments) * 100) : 0,
-      lastDeployment: formatDate(lastBundle?.id),
-    };
+      return {
+        totalDeployments,
+        activeUsers: enabledBundles,
+        updateRate: totalDeployments ? Math.round((enabledBundles / totalDeployments) * 100) : 0,
+        lastDeployment: formatDate(lastBundle?.id),
+      };
+    } catch (error) {
+      console.warn('[AWS RDS] Connection failed, falling back to mock data:', error);
+      // Fall through to mock data below
+    }
   }
 
   if (DB_PROVIDER === 'dynamodb') {
