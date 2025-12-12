@@ -3,6 +3,29 @@
 import { createClient } from '@supabase/supabase-js';
 
 // ============================================
+// HOT UPDATER OFFICIAL SERVER API
+// ============================================
+
+/**
+ * Note: Hot Updater provides an official @hot-updater/server package with APIs like:
+ * - getBundles({ where, limit, offset })
+ * - getBundleById(id)
+ * - getChannels()
+ * - insertBundle(), updateBundleById(), deleteBundleById()
+ *
+ * However, it has bundling conflicts with Next.js due to fumadb ESM/CommonJS issues.
+ * For now, we use direct S3/database access which is stable and working.
+ *
+ * Future: When Next.js 15+ or Hot Updater resolves these issues, we can migrate to:
+ * ```typescript
+ * import { createHotUpdater } from '@hot-updater/server';
+ * import { s3Database, s3Storage } from '@hot-updater/aws';
+ * const api = createHotUpdater({ database: s3Database(...), storages: [...] });
+ * const bundles = await api.getBundles({ limit: 50 });
+ * ```
+ */
+
+// ============================================
 // CONFIGURATION - Choose your database provider
 // ============================================
 
@@ -46,6 +69,9 @@ if (DB_PROVIDER === 'aws') {
       secretAccessKey: process.env.HOT_UPDATER_S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
     },
   });
+
+  // Note: Hot Updater Official Server API initialization moved to lazy loading
+  // to avoid Next.js bundling conflicts with fumadb dependencies
 }
 
 // AWS S3 Configuration (for bundle file storage with aws-rds)
@@ -160,15 +186,13 @@ async function readS3BundlesMetadata() {
       }
     }
 
-    // If no single database file, look for metadata files
+    // If no single database file, look for update.json files (Hot Updater's bundle metadata)
+    // Pattern: {channel}/{platform}/{version}/update.json
     const jsonFiles = objects.filter((obj: any) =>
-      obj.Key?.endsWith('.json') &&
-      !obj.Key?.endsWith('.bundle') &&
-      !obj.Key?.endsWith('.map') &&
-      !obj.Key?.includes('fingerprint')
+      obj.Key?.endsWith('/update.json')
     );
 
-    console.log(`[AWS S3] Found ${jsonFiles.length} JSON files:`);
+    console.log(`[AWS S3] Found ${jsonFiles.length} update.json files:`);
     console.log('[AWS S3] JSON file paths:', jsonFiles.map((f: any) => f.Key));
 
     const bundlesData = [];
@@ -184,22 +208,76 @@ async function readS3BundlesMetadata() {
         const bodyContents = await streamToString(response.Body);
         const metadata = JSON.parse(bodyContents);
 
-        console.log(`[AWS S3] Content of ${jsonFile.Key}:`, JSON.stringify(metadata).substring(0, 300));
-        console.log(`[AWS S3] Keys in ${jsonFile.Key}:`, Object.keys(metadata));
+        // Extract metadata from file path (e.g., "production/android/3.1.13/update.json")
+        const pathMetadata = extractMetadataFromPath(jsonFile.Key);
 
-        // Hot Updater metadata - be very lenient, just push everything
-        // We'll figure out the exact structure later
-        bundlesData.push({
-          ...metadata,
-          s3Key: jsonFile.Key,
-          lastModified: jsonFile.LastModified,
-        });
+        // Hot Updater's update.json files contain ARRAYS of bundles
+        if (Array.isArray(metadata)) {
+          console.log(`[AWS S3] ${jsonFile.Key} contains ${metadata.length} bundles`);
+
+          // Extract individual bundles from the array
+          for (const bundle of metadata) {
+            // Extract timestamp from UUIDv7 if available
+            const timestamp = bundle.id ? extractTimestampFromUUIDv7(bundle.id) : null;
+
+            // Try to get bundle size from S3 if bundle has an ID
+            let bundleSize = 'N/A';
+            if (bundle.id) {
+              try {
+                const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+                const headCommand = new HeadObjectCommand({
+                  Bucket: bucketName,
+                  Key: `${bundle.id}/bundle.zip`,
+                });
+                const sizeResponse = await s3ClientAWS.send(headCommand);
+                if (sizeResponse.ContentLength) {
+                  const kb = sizeResponse.ContentLength / 1024;
+                  bundleSize = kb > 1024
+                    ? `${(kb / 1024).toFixed(2)} MB`
+                    : `${kb.toFixed(2)} KB`;
+                }
+              } catch {
+                // Bundle file might not exist yet
+              }
+            }
+
+            bundlesData.push({
+              ...bundle,
+              // Add metadata from file path
+              channel: bundle.channel || pathMetadata.channel,
+              platform: bundle.platform || pathMetadata.platform,
+              appVersion: pathMetadata.version,
+              // Add timestamps
+              createdAt: timestamp || jsonFile.LastModified,
+              lastModified: jsonFile.LastModified,
+              // Add bundle size
+              size: bundleSize,
+              // Keep track of source
+              s3Key: jsonFile.Key,
+            });
+          }
+        } else if (metadata && typeof metadata === 'object') {
+          // Single bundle object or other metadata file
+          console.log(`[AWS S3] ${jsonFile.Key} is a single object with keys:`, Object.keys(metadata));
+
+          const timestamp = metadata.id ? extractTimestampFromUUIDv7(metadata.id) : null;
+
+          bundlesData.push({
+            ...metadata,
+            channel: metadata.channel || pathMetadata.channel,
+            platform: metadata.platform || pathMetadata.platform,
+            appVersion: pathMetadata.version,
+            createdAt: timestamp || jsonFile.LastModified,
+            lastModified: jsonFile.LastModified,
+            s3Key: jsonFile.Key,
+          });
+        }
       } catch (err) {
         console.warn(`[AWS S3] Failed to read ${jsonFile.Key}:`, err);
       }
     }
 
-    console.log(`[AWS S3] Successfully read ${bundlesData.length} bundle metadata files`);
+    console.log(`[AWS S3] Successfully extracted ${bundlesData.length} bundles from ${jsonFiles.length} files`);
     return bundlesData;
   } catch (error) {
     console.error('[AWS S3] Failed to read bundles metadata:', error);
@@ -217,6 +295,73 @@ async function streamToString(stream: any): Promise<string> {
     stream.on('error', reject);
     stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
   });
+}
+
+/**
+ * Extract timestamp from UUIDv7
+ * UUIDv7 format: First 48 bits contain Unix timestamp in milliseconds
+ */
+function extractTimestampFromUUIDv7(uuid: string): Date | null {
+  try {
+    // Remove hyphens and get first 12 hex characters
+    const hex = uuid.replace(/-/g, '').substring(0, 12);
+    // Convert to decimal (milliseconds since Unix epoch)
+    const timestamp = parseInt(hex, 16);
+    return new Date(timestamp);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get bundle size from S3 AWS (for use with Hot Updater API)
+ * Bundle files are stored as: {bundle-id}/bundle.zip
+ */
+async function getBundleSizeFromS3AWS(bundleId: string): Promise<string> {
+  if (!s3ClientAWS) return 'N/A';
+
+  try {
+    const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+    const bucketName = process.env.HOT_UPDATER_S3_BUCKET_NAME || '';
+
+    const command = new HeadObjectCommand({
+      Bucket: bucketName,
+      Key: `${bundleId}/bundle.zip`,
+    });
+
+    const response = await s3ClientAWS.send(command);
+    if (response.ContentLength) {
+      const kb = response.ContentLength / 1024;
+      return kb > 1024
+        ? `${(kb / 1024).toFixed(2)} MB`
+        : `${kb.toFixed(2)} KB`;
+    }
+  } catch {
+    // Bundle file might not exist yet
+  }
+
+  return 'N/A';
+}
+
+/**
+ * Extract channel, platform, and version from S3 file path
+ * Examples:
+ * - "production/android/3.1.13/update.json" → { channel: "production", platform: "android", version: "3.1.13" }
+ * - "staging/ios/3.1.12/update.json" → { channel: "staging", platform: "ios", version: "3.1.12" }
+ */
+function extractMetadataFromPath(filePath: string): { channel?: string; platform?: string; version?: string } {
+  const parts = filePath.split('/');
+
+  // Pattern: {channel}/{platform}/{version}/update.json
+  if (parts.length >= 4 && parts[parts.length - 1] === 'update.json') {
+    return {
+      channel: parts[0],
+      platform: parts[1],
+      version: parts[2],
+    };
+  }
+
+  return {};
 }
 
 /**
@@ -262,30 +407,31 @@ export async function getDeployments() {
   if (DB_PROVIDER === 'aws') {
     try {
       const bundlesData = await readS3BundlesMetadata();
+      console.log(`[AWS S3] Processing ${bundlesData.length} bundles for deployments view`);
 
-      // Transform S3 metadata to match our deployment interface
       const deployments = bundlesData
         .sort((a: any, b: any) => {
-          const dateA = new Date(a.lastModified || a.createdAt || 0);
-          const dateB = new Date(b.lastModified || b.createdAt || 0);
+          const dateA = new Date(a.createdAt || a.lastModified || 0);
+          const dateB = new Date(b.createdAt || b.lastModified || 0);
           return dateB.getTime() - dateA.getTime();
         })
         .slice(0, 50)
         .map((bundle: any) => ({
-          id: bundle.id || bundle.bundleId || generateId(),
+          id: bundle.id || generateId(),
           version: bundle.appVersion || bundle.version || 'unknown',
           platform: bundle.platform || 'all',
           channel: bundle.channel || 'production',
           status: bundle.enabled !== false ? 'success' : 'failed',
           deployedAt: formatDate(bundle.createdAt || bundle.lastModified),
-          deployedBy: bundle.deployedBy || bundle.message || 'System',
+          deployedBy: bundle.message || bundle.deployedBy || 'System',
           bundleSize: bundle.size || 'N/A',
           downloads: bundle.downloads || 0,
         }));
 
+      console.log(`[AWS S3] Returning ${deployments.length} deployments`);
       return deployments;
     } catch (error) {
-      console.warn('[AWS S3] Connection failed, falling back to mock data:', error);
+      console.warn('[AWS] Connection failed, falling back to mock data:', error);
       // Fall through to mock data below
     }
   }
@@ -438,16 +584,17 @@ export async function getBundles() {
   if (DB_PROVIDER === 'aws') {
     try {
       const bundlesData = await readS3BundlesMetadata();
+      console.log(`[AWS S3] Processing ${bundlesData.length} bundles for bundles view`);
 
       const bundles = bundlesData
         .sort((a: any, b: any) => {
-          const dateA = new Date(a.lastModified || a.createdAt || 0);
-          const dateB = new Date(b.lastModified || b.createdAt || 0);
+          const dateA = new Date(a.createdAt || a.lastModified || 0);
+          const dateB = new Date(b.createdAt || b.lastModified || 0);
           return dateB.getTime() - dateA.getTime();
         })
         .slice(0, 20)
         .map((bundle: any) => ({
-          id: bundle.id || bundle.bundleId || generateId(),
+          id: bundle.id || generateId(),
           version: bundle.appVersion || bundle.version || 'unknown',
           platform: bundle.platform || 'all',
           channel: bundle.channel || 'production',
@@ -455,16 +602,17 @@ export async function getBundles() {
           size: bundle.size || 'N/A',
           active: bundle.enabled !== false,
           enabled: bundle.enabled !== false,
-          forceUpdate: bundle.forceUpdate || bundle.should_force_update || false,
+          forceUpdate: bundle.shouldForceUpdate || bundle.forceUpdate || false,
           message: bundle.message || '',
-          fingerprintHash: bundle.fingerprintHash || bundle.fingerprint_hash || '',
-          targetAppVersion: bundle.targetAppVersion || bundle.target_app_version || '',
-          commitHash: bundle.commitHash || bundle.git_commit_hash || '',
+          fingerprintHash: bundle.fingerprintHash || '',
+          targetAppVersion: bundle.targetAppVersion || bundle.appVersion || '',
+          commitHash: bundle.gitCommitHash || '',
         }));
 
+      console.log(`[AWS S3] Returning ${bundles.length} bundles`);
       return bundles;
     } catch (error) {
-      console.warn('[AWS S3] Connection failed, falling back to mock data:', error);
+      console.warn('[AWS] Connection failed, falling back to mock data:', error);
       // Fall through to mock data below
     }
   }
@@ -672,18 +820,20 @@ export async function getStats() {
   if (DB_PROVIDER === 'aws') {
     try {
       const bundlesData = await readS3BundlesMetadata();
+      console.log(`[AWS S3] Calculating stats from ${bundlesData.length} bundles`);
 
       const totalDeployments = bundlesData.length;
       const enabledBundles = bundlesData.filter((b: any) => b.enabled !== false).length;
 
-      // Find the most recent bundle
       const sortedBundles = bundlesData.sort((a: any, b: any) => {
-        const dateA = new Date(a.lastModified || a.createdAt || 0);
-        const dateB = new Date(b.lastModified || b.createdAt || 0);
+        const dateA = new Date(a.createdAt || a.lastModified || 0);
+        const dateB = new Date(b.createdAt || b.lastModified || 0);
         return dateB.getTime() - dateA.getTime();
       });
 
       const lastBundle = sortedBundles[0];
+
+      console.log(`[AWS S3] Stats: ${totalDeployments} total, ${enabledBundles} enabled`);
 
       return {
         totalDeployments,
@@ -692,7 +842,7 @@ export async function getStats() {
         lastDeployment: formatDate(lastBundle?.createdAt || lastBundle?.lastModified),
       };
     } catch (error) {
-      console.warn('[AWS S3] Connection failed, falling back to mock data:', error);
+      console.warn('[AWS] Connection failed, falling back to mock data:', error);
       // Fall through to mock data below
     }
   }
