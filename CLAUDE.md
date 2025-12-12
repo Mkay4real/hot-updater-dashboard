@@ -73,18 +73,12 @@ The database layer ([lib/db.ts](lib/db.ts)) supports multiple database providers
 
 **Officially Supported Providers** (by Hot Updater):
 - **Supabase** - Easiest setup, includes both storage and database
-- **PostgreSQL** - Direct PostgreSQL connection (including AWS RDS PostgreSQL)
+- **AWS S3** - Hot Updater's official AWS provider using s3Storage + s3Database (metadata stored in S3)
+- **PostgreSQL** - Direct PostgreSQL connection
 - **Cloudflare D1** - Edge database for global performance
 - **Firebase** - Firebase Realtime Database
 
-**Experimental Providers** (dashboard-only, not officially supported):
-- **DynamoDB** ⚠️ - Custom implementation for serverless deployments. Requires manual table setup. Use with caution.
-
-**Note on AWS:**
-- **AWS S3**: Bundle file storage (requires `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`)
-- **AWS RDS**: PostgreSQL database for metadata (requires `pg` package)
-- **Lambda@Edge**: Optional CDN/edge delivery (not required for dashboard)
-- **Architecture**: RDS stores metadata, S3 stores bundle files, dashboard fetches sizes from S3
+**Note:** AWS S3 provider requires `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` (already installed). CloudFront CDN is optional for improved global performance.
 
 The database layer integrates with **Hot Updater's existing schema**. Hot Updater CLI automatically creates the required database tables when you run `npx hot-updater init` in your React Native project.
 
@@ -146,28 +140,29 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
 ```
 
-**AWS RDS + S3 (Officially Supported):**
+**AWS S3 (Hot Updater's Official AWS Provider):**
 ```env
-DB_PROVIDER=aws-rds
+DB_PROVIDER=aws
 
-# RDS PostgreSQL (for metadata/database)
-AWS_RDS_HOST=your-rds-instance.region.rds.amazonaws.com
-AWS_RDS_PORT=5432
-AWS_RDS_DATABASE=hotupdater
-AWS_RDS_USER=postgres
-AWS_RDS_PASSWORD=your-password
-AWS_RDS_SSL=true
+# S3 Configuration (uses Hot Updater's s3Database + s3Storage)
+# These should match your hot-updater.config.ts settings
+HOT_UPDATER_S3_BUCKET_NAME=your-bucket-name
+HOT_UPDATER_S3_REGION=us-east-1
+HOT_UPDATER_S3_ACCESS_KEY_ID=AKIA...
+HOT_UPDATER_S3_SECRET_ACCESS_KEY=your-secret-key
 
-# S3 (for bundle file storage)
-AWS_REGION=us-east-1
-AWS_S3_BUCKET_NAME=hot-updater-bundles
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=your-secret-key
+# Optional: CloudFront Distribution ID
+HOT_UPDATER_CLOUDFRONT_DISTRIBUTION_ID=E34WBFNB217Z3E
 
 HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
 ```
 
-**Note**: The AWS setup uses RDS for database (metadata) and S3 for storage (bundle files). Lambda@Edge is optional for edge delivery.
+**PostgreSQL:**
+```env
+DB_PROVIDER=postgres
+DATABASE_URL=postgresql://username:password@host:5432/database
+HOT_UPDATER_PROJECT_PATH=/path/to/react-native-project
+```
 
 **DynamoDB (⚠️ EXPERIMENTAL - Not officially supported by Hot Updater):**
 ```env
@@ -205,10 +200,10 @@ The `HOT_UPDATER_PROJECT_PATH` environment variable must point to your React Nat
 
 **Provider-Specific Setup:**
 - **Supabase**: Use the same project URL and anon key from Hot Updater init
-- **AWS RDS**: Ensure the RDS PostgreSQL instance is accessible from where the dashboard runs. Uses Hot Updater's PostgreSQL plugin.
+- **AWS S3**: Use the SAME credentials from your React Native project's `hot-updater.config.ts`. The dashboard reads metadata from S3 where Hot Updater stores it.
+- **PostgreSQL**: Use Hot Updater's PostgreSQL plugin configuration
 - **Cloudflare D1**: Use the same database ID and API token from Hot Updater init
 - **Firebase**: Use Firebase Realtime Database credentials from Hot Updater init
-- **DynamoDB (⚠️ Experimental)**: Manually create table with Hot Updater schema. Not created by `npx hot-updater init`.
 
 See [lib/db.ts](lib/db.ts) for the complete Hot Updater schema reference and provider implementations.
 
@@ -229,14 +224,7 @@ See [lib/db.ts](lib/db.ts) for the complete Hot Updater schema reference and pro
 6. Start dev server with `yarn dev`
 7. Visit http://localhost:3000
 
-**Note:** If using AWS providers, install the required dependencies:
-```bash
-# For AWS RDS + S3 (Recommended)
-yarn add pg @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
-
-# For AWS DynamoDB (Experimental)
-yarn add @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
-```
+**Note:** AWS S3 dependencies are already installed. No additional packages needed for the official Hot Updater AWS provider.
 
 **AWS S3 Features Enabled:**
 - ✅ Automatic bundle size fetching from S3
