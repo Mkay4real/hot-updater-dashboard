@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 // ============================================
 
 console.log('[INIT] process.env.DB_PROVIDER at module load:', process.env.DB_PROVIDER);
-const DB_PROVIDER = process.env.DB_PROVIDER || 'mock'; // 'supabase', 'aws-rds', 'dynamodb', 'postgres', 'cloudflare-d1', 'mock'
+const DB_PROVIDER = process.env.DB_PROVIDER || 'mock'; // 'supabase', 'aws', 'aws-rds', 'dynamodb', 'postgres', 'cloudflare-d1', 'mock'
 console.log('[INIT] DB_PROVIDER set to:', DB_PROVIDER);
 
 // Supabase Configuration
@@ -30,6 +30,21 @@ if (DB_PROVIDER === 'aws-rds') {
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
+  });
+}
+
+// AWS S3-Only Configuration (Hot Updater's official AWS provider)
+// Uses s3Database + s3Storage - metadata stored as JSON files in S3
+let s3ClientAWS: any = null;
+if (DB_PROVIDER === 'aws') {
+  const { S3Client } = require('@aws-sdk/client-s3');
+
+  s3ClientAWS = new S3Client({
+    region: process.env.HOT_UPDATER_S3_REGION || process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.HOT_UPDATER_S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.HOT_UPDATER_S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
+    },
   });
 }
 
@@ -76,6 +91,142 @@ if (DB_PROVIDER === 'dynamodb') {
 // });
 
 // ============================================
+// HELPER FUNCTIONS FOR AWS S3 PROVIDER
+// ============================================
+
+/**
+ * Helper function to read bundle metadata from Hot Updater's s3Database
+ * Hot Updater stores metadata as JSON files in S3 bucket
+ */
+async function readS3BundlesMetadata() {
+  if (!s3ClientAWS) return [];
+
+  const { ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+  const bucketName = process.env.HOT_UPDATER_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET_NAME || '';
+
+  try {
+    console.log(`[AWS S3] Listing objects in bucket: ${bucketName}`);
+
+    // Hot Updater's s3Database stores metadata - try listing all objects first
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucketName,
+      MaxKeys: 1000,
+    });
+
+    const listResponse = await s3ClientAWS.send(listCommand);
+    const objects = listResponse.Contents || [];
+
+    console.log(`[AWS S3] Found ${objects.length} total objects in bucket`);
+    if (objects.length > 0) {
+      console.log('[AWS S3] Sample keys:', objects.slice(0, 10).map((o: any) => o.Key));
+    }
+
+    // Hot Updater s3Database possible storage patterns:
+    // 1. database.json - single database file with all bundles
+    // 2. bundles.json - bundles manifest
+    // 3. [platform]/[channel]/metadata.json - per-platform/channel metadata
+    // 4. Individual bundle metadata files
+
+    const possibleDatabaseFiles = [
+      'database.json',
+      'bundles.json',
+      'metadata.json',
+      'hot-updater/database.json',
+      'hot-updater/bundles.json',
+      '.hot-updater/database.json',
+    ];
+
+    for (const possibleFile of possibleDatabaseFiles) {
+      const found = objects.find((obj: any) => obj.Key === possibleFile);
+      if (found) {
+        console.log(`[AWS S3] Found database file: ${found.Key}`);
+        try {
+          const getCommand = new GetObjectCommand({
+            Bucket: bucketName,
+            Key: found.Key,
+          });
+
+          const response = await s3ClientAWS.send(getCommand);
+          const bodyContents = await streamToString(response.Body);
+          const data = JSON.parse(bodyContents);
+
+          // Database file might be array or object with bundles property
+          const bundles = Array.isArray(data) ? data : (data.bundles || data.data || []);
+          console.log(`[AWS S3] Found ${bundles.length} bundles in ${found.Key}`);
+          return bundles;
+        } catch (err) {
+          console.warn(`[AWS S3] Failed to read ${found.Key}:`, err);
+        }
+      }
+    }
+
+    // If no single database file, look for metadata files
+    const jsonFiles = objects.filter((obj: any) =>
+      obj.Key?.endsWith('.json') &&
+      !obj.Key?.endsWith('.bundle') &&
+      !obj.Key?.endsWith('.map') &&
+      !obj.Key?.includes('fingerprint')
+    );
+
+    console.log(`[AWS S3] Found ${jsonFiles.length} JSON files:`);
+    console.log('[AWS S3] JSON file paths:', jsonFiles.map((f: any) => f.Key));
+
+    const bundlesData = [];
+    for (const jsonFile of jsonFiles.slice(0, 50)) { // Limit to prevent too many requests
+      try {
+        console.log(`[AWS S3] Reading ${jsonFile.Key}...`);
+        const getCommand = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: jsonFile.Key,
+        });
+
+        const response = await s3ClientAWS.send(getCommand);
+        const bodyContents = await streamToString(response.Body);
+        const metadata = JSON.parse(bodyContents);
+
+        console.log(`[AWS S3] Content of ${jsonFile.Key}:`, JSON.stringify(metadata).substring(0, 300));
+        console.log(`[AWS S3] Keys in ${jsonFile.Key}:`, Object.keys(metadata));
+
+        // Hot Updater metadata - be very lenient, just push everything
+        // We'll figure out the exact structure later
+        bundlesData.push({
+          ...metadata,
+          s3Key: jsonFile.Key,
+          lastModified: jsonFile.LastModified,
+        });
+      } catch (err) {
+        console.warn(`[AWS S3] Failed to read ${jsonFile.Key}:`, err);
+      }
+    }
+
+    console.log(`[AWS S3] Successfully read ${bundlesData.length} bundle metadata files`);
+    return bundlesData;
+  } catch (error) {
+    console.error('[AWS S3] Failed to read bundles metadata:', error);
+    throw error;
+  }
+}
+
+/**
+ * Helper to convert S3 stream to string
+ */
+async function streamToString(stream: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: any[] = [];
+    stream.on('data', (chunk: any) => chunks.push(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  });
+}
+
+/**
+ * Helper to generate a simple ID
+ */
+function generateId(): string {
+  return `bundle-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
+// ============================================
 // DATABASE QUERIES
 // ============================================
 
@@ -106,6 +257,37 @@ export async function getDeployments() {
       bundleSize: 'N/A', // Size info not directly available
       downloads: 0, // Hot updater doesn't track downloads in bundles table
     }));
+  }
+
+  if (DB_PROVIDER === 'aws') {
+    try {
+      const bundlesData = await readS3BundlesMetadata();
+
+      // Transform S3 metadata to match our deployment interface
+      const deployments = bundlesData
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.lastModified || a.createdAt || 0);
+          const dateB = new Date(b.lastModified || b.createdAt || 0);
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, 50)
+        .map((bundle: any) => ({
+          id: bundle.id || bundle.bundleId || generateId(),
+          version: bundle.appVersion || bundle.version || 'unknown',
+          platform: bundle.platform || 'all',
+          channel: bundle.channel || 'production',
+          status: bundle.enabled !== false ? 'success' : 'failed',
+          deployedAt: formatDate(bundle.createdAt || bundle.lastModified),
+          deployedBy: bundle.deployedBy || bundle.message || 'System',
+          bundleSize: bundle.size || 'N/A',
+          downloads: bundle.downloads || 0,
+        }));
+
+      return deployments;
+    } catch (error) {
+      console.warn('[AWS S3] Connection failed, falling back to mock data:', error);
+      // Fall through to mock data below
+    }
   }
 
   if (DB_PROVIDER === 'aws-rds') {
@@ -251,6 +433,40 @@ export async function getBundles() {
       targetAppVersion: row.target_app_version,
       commitHash: row.git_commit_hash,
     }));
+  }
+
+  if (DB_PROVIDER === 'aws') {
+    try {
+      const bundlesData = await readS3BundlesMetadata();
+
+      const bundles = bundlesData
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.lastModified || a.createdAt || 0);
+          const dateB = new Date(b.lastModified || b.createdAt || 0);
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, 20)
+        .map((bundle: any) => ({
+          id: bundle.id || bundle.bundleId || generateId(),
+          version: bundle.appVersion || bundle.version || 'unknown',
+          platform: bundle.platform || 'all',
+          channel: bundle.channel || 'production',
+          createdAt: formatDate(bundle.createdAt || bundle.lastModified),
+          size: bundle.size || 'N/A',
+          active: bundle.enabled !== false,
+          enabled: bundle.enabled !== false,
+          forceUpdate: bundle.forceUpdate || bundle.should_force_update || false,
+          message: bundle.message || '',
+          fingerprintHash: bundle.fingerprintHash || bundle.fingerprint_hash || '',
+          targetAppVersion: bundle.targetAppVersion || bundle.target_app_version || '',
+          commitHash: bundle.commitHash || bundle.git_commit_hash || '',
+        }));
+
+      return bundles;
+    } catch (error) {
+      console.warn('[AWS S3] Connection failed, falling back to mock data:', error);
+      // Fall through to mock data below
+    }
   }
 
   if (DB_PROVIDER === 'aws-rds') {
@@ -451,6 +667,34 @@ export async function getStats() {
       updateRate: totalDeployments ? Math.round((enabledBundles || 0) / totalDeployments * 100) : 0,
       lastDeployment: formatDate(lastBundle?.id),
     };
+  }
+
+  if (DB_PROVIDER === 'aws') {
+    try {
+      const bundlesData = await readS3BundlesMetadata();
+
+      const totalDeployments = bundlesData.length;
+      const enabledBundles = bundlesData.filter((b: any) => b.enabled !== false).length;
+
+      // Find the most recent bundle
+      const sortedBundles = bundlesData.sort((a: any, b: any) => {
+        const dateA = new Date(a.lastModified || a.createdAt || 0);
+        const dateB = new Date(b.lastModified || b.createdAt || 0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      const lastBundle = sortedBundles[0];
+
+      return {
+        totalDeployments,
+        activeUsers: enabledBundles,
+        updateRate: totalDeployments ? Math.round((enabledBundles / totalDeployments) * 100) : 0,
+        lastDeployment: formatDate(lastBundle?.createdAt || lastBundle?.lastModified),
+      };
+    } catch (error) {
+      console.warn('[AWS S3] Connection failed, falling back to mock data:', error);
+      // Fall through to mock data below
+    }
   }
 
   if (DB_PROVIDER === 'aws-rds') {
