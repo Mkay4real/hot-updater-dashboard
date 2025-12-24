@@ -110,13 +110,20 @@ export default function HotUpdaterDashboard() {
     }
   };
 
-  const handleDeploy = async (platform: string, channel: string, branch?: string) => {
+  const handleDeploy = async (
+    platform: string,
+    channel: string,
+    branch?: string,
+    appVersion?: string,
+    forceUpdate?: boolean,
+    message?: string
+  ) => {
     try {
       setDeploying(true);
       const response = await fetch('/api/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, channel, branch })
+        body: JSON.stringify({ platform, channel, branch, appVersion, forceUpdate, message })
       });
 
       const data = await response.json();
@@ -697,6 +704,9 @@ function DeployModal({ onClose, onDeploy, isDeploying }: any) {
   const [platform, setPlatform] = useState('all');
   const [channel, setChannel] = useState('development');
   const [branch, setBranch] = useState('');
+  const [appVersion, setAppVersion] = useState('');
+  const [forceUpdate, setForceUpdate] = useState(false);
+  const [message, setMessage] = useState('');
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
 
@@ -793,6 +803,58 @@ function DeployModal({ onClose, onDeploy, isDeploying }: any) {
             )}
             <p className="text-xs text-gray-500 mt-1">Leave empty to use current branch</p>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Target App Version (optional)
+            </label>
+            <input
+              type="text"
+              value={appVersion}
+              onChange={(e) => setAppVersion(e.target.value)}
+              placeholder="e.g., 1.0.0, 1.x.x, >=1.0.0"
+              className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+              disabled={isDeploying}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Semver format: 1.0.0 (exact), 1.x.x (range), ≥1.0.0 (minimum). Leave empty for all versions.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Deployment Message (optional)
+            </label>
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="e.g., Fix critical bug in payment flow"
+              className="w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+              disabled={isDeploying}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Custom message for this deployment. Defaults to latest git commit message.
+            </p>
+          </div>
+
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="forceUpdate"
+              checked={forceUpdate}
+              onChange={(e) => setForceUpdate(e.target.checked)}
+              className="w-4 h-4 bg-black/30 border border-white/10 rounded focus:ring-2 focus:ring-purple-500"
+              disabled={isDeploying}
+            />
+            <label htmlFor="forceUpdate" className="ml-2 text-sm text-gray-400">
+              <span className="font-medium text-white">Force Update</span>
+              <span className="text-red-400"> ⚠️</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Users must update before using the app. Use only for critical security patches.
+              </p>
+            </label>
+          </div>
         </div>
 
         <div className="flex space-x-4 mt-8">
@@ -804,7 +866,7 @@ function DeployModal({ onClose, onDeploy, isDeploying }: any) {
             Cancel
           </button>
           <button
-            onClick={() => onDeploy(platform, channel, branch)}
+            onClick={() => onDeploy(platform, channel, branch, appVersion, forceUpdate, message)}
             className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             disabled={isDeploying}
           >

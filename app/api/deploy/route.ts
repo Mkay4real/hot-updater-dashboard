@@ -7,7 +7,7 @@ const execPromise = promisify(exec);
 
 export async function POST(request: Request) {
   try {
-    const { platform, channel, branch } = await request.json();
+    const { platform, channel, branch, appVersion, forceUpdate, message } = await request.json();
 
     // Validate inputs
     if (!platform || !channel) {
@@ -40,10 +40,26 @@ export async function POST(request: Request) {
     // Optionally checkout branch before deploying
     const branchPrefix = branch ? `git checkout ${branch} && ` : '';
 
+    // Build deployment flags
+    // Note: Strategy is configured in hot-updater.config.ts, not via CLI
+    let deployFlags = '';
+    if (appVersion) {
+      // Use -t flag for target app version (supports semver: 1.0.0, 1.x.x, >=1.0.0)
+      deployFlags += `-t "${appVersion}"`;
+    }
+    if (forceUpdate) {
+      deployFlags += ' --force-update';
+    }
+    if (message) {
+      deployFlags += ` -m "${message}"`;
+    }
+
     if (platform === 'all') {
       // Deploy to both platforms sequentially
-      const iosCommand = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p ios -c ${channel}`;
-      const androidCommand = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p android -c ${channel}`;
+      const iosCommand = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p ios -c ${channel} ${deployFlags}`;
+      const androidCommand = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p android -c ${channel} ${deployFlags}`;
+
+      console.log('[DEPLOY] Executing iOS command:', iosCommand);
 
       // Deploy to iOS first
       const iosResult = await execPromise(iosCommand, {
@@ -55,6 +71,8 @@ export async function POST(request: Request) {
       }
 
       output += `iOS Deployment:\n${iosResult.stdout}\n\n`;
+
+      console.log('[DEPLOY] Executing Android command:', androidCommand);
 
       // Then deploy to Android
       const androidResult = await execPromise(androidCommand, {
@@ -68,7 +86,10 @@ export async function POST(request: Request) {
       output += `Android Deployment:\n${androidResult.stdout}`;
     } else {
       // Deploy to single platform
-      const command = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p ${platform} -c ${channel}`;
+      const command = `cd ${projectPath} && ${branchPrefix}npx hot-updater deploy -p ${platform} -c ${channel} ${deployFlags}`;
+
+      console.log('[DEPLOY] Executing command:', command);
+
       const { stdout, stderr } = await execPromise(command, {
         timeout: 300000, // 5 minute timeout
       });
