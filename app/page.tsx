@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { UserButton } from '@clerk/nextjs';
 import {
   Rocket,
   Package,
@@ -252,13 +253,27 @@ export default function HotUpdaterDashboard() {
               </div>
               <h1 className="text-2xl font-bold text-white">Hot Updater Dashboard</h1>
             </div>
-            <button
-              onClick={() => setShowDeployModal(true)}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-2 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg hover:shadow-xl"
-            >
-              <Upload className="w-4 h-4 inline mr-2" />
-              New Deployment
-            </button>
+            <div className="flex items-center gap-4">
+              {/* Show deploy button only in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <button
+                  onClick={() => setShowDeployModal(true)}
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-2 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg hover:shadow-xl"
+                >
+                  <Upload className="w-4 h-4 inline mr-2" />
+                  New Deployment
+                </button>
+              )}
+              {/* User profile button */}
+              <UserButton
+                afterSignOutUrl="/sign-in"
+                appearance={{
+                  elements: {
+                    avatarBox: "w-10 h-10"
+                  }
+                }}
+              />
+            </div>
           </div>
         </div>
       </header>
