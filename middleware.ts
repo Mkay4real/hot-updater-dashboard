@@ -3,6 +3,47 @@ import { NextResponse } from 'next/server'
 
 const isPublicRoute = createRouteMatcher(['/sign-in(.*)'])
 
+/**
+ * Check if email matches authorized pattern
+ * Supports:
+ * - Exact email: john@company.com
+ * - Wildcard domain: *@company.com (allows anyone from company.com)
+ * - Wildcard subdomain: *@*.company.com (allows anyone from any subdomain)
+ */
+function isEmailAuthorized(email: string, allowedPatterns: string[]): boolean {
+  if (!email) return false;
+
+  return allowedPatterns.some(pattern => {
+    const trimmedPattern = pattern.trim();
+
+    // Exact match
+    if (trimmedPattern === email) {
+      return true;
+    }
+
+    // Wildcard domain: *@company.com
+    if (trimmedPattern.startsWith('*@')) {
+      const domain = trimmedPattern.substring(2); // Remove "*@"
+      const emailDomain = email.split('@')[1];
+
+      if (!emailDomain) return false;
+
+      // Check for exact domain match
+      if (emailDomain === domain) {
+        return true;
+      }
+
+      // Check for subdomain wildcard: *@*.company.com matches user@sub.company.com
+      if (domain.startsWith('*.')) {
+        const baseDomain = domain.substring(2); // Remove "*."
+        return emailDomain.endsWith('.' + baseDomain) || emailDomain === baseDomain;
+      }
+    }
+
+    return false;
+  });
+}
+
 export default clerkMiddleware(async (auth, request) => {
   // Allow public routes (sign-in page)
   if (isPublicRoute(request)) {
@@ -20,13 +61,13 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   // Optional: Check email allowlist if configured
-  const allowedEmails = process.env.AUTHORIZED_EMAILS?.split(',').map(e => e.trim()) || []
+  const allowedPatterns = process.env.AUTHORIZED_EMAILS?.split(',').map(e => e.trim()) || []
 
-  if (allowedEmails.length > 0) {
+  if (allowedPatterns.length > 0) {
     const user = authResult.sessionClaims
     const userEmail = user?.email as string | undefined
 
-    if (!userEmail || !allowedEmails.includes(userEmail)) {
+    if (!userEmail || !isEmailAuthorized(userEmail, allowedPatterns)) {
       // User is authenticated but not in allowlist
       return NextResponse.json(
         {

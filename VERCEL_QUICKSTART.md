@@ -90,9 +90,16 @@ DB_PROVIDER=postgres
 DATABASE_URL=postgresql://user:pass@host:5432/database
 ```
 
-### Optional - Email Allowlist
+### Optional - Email Allowlist (Supports Wildcards)
 ```
+# Exact emails
 AUTHORIZED_EMAILS=john@company.com,jane@company.com,cto@company.com
+
+# Or wildcard domain (allow everyone from your company)
+AUTHORIZED_EMAILS=*@yourcompany.com
+
+# Or mix both
+AUTHORIZED_EMAILS=john@company.com,*@yourcompany.com,*@partner.com
 ```
 
 ---

@@ -733,8 +733,8 @@ function DeployModal({ onClose, onDeploy, isDeploying }: any) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-2xl max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold text-white mb-6">New Deployment</h2>
 
         <div className="space-y-4">
@@ -901,8 +901,8 @@ function EditBundleModal({ bundle, onClose, onSave, onDelete, onPromote }: any) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-2xl max-w-2xl w-full mx-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-white">Edit {bundle.id.substring(0, 12)}</h2>
           <button
@@ -1052,8 +1052,8 @@ function PromoteChannelModal({ bundle, onClose, onConfirm }: any) {
   const channels = ['development', 'staging', 'production'].filter(c => c !== bundle.channel);
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-2xl max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-white">Promote Channel</h2>
           <button

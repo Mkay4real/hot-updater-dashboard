@@ -367,13 +367,39 @@ Railway supports persistent filesystems and long-running processes, so `npx hot-
 
 ## Access Control Best Practices
 
-### Email Allowlist
+### Email Allowlist (with Wildcard Support)
 
-Store authorized emails in environment variables:
+The dashboard supports flexible email authorization patterns:
 
+**Exact Email Matching:**
 ```env
 AUTHORIZED_EMAILS=john@company.com,jane@company.com,cto@company.com
 ```
+
+**Wildcard Domain (allow entire company):**
+```env
+# Allow anyone with @yourcompany.com email
+AUTHORIZED_EMAILS=*@yourcompany.com
+```
+
+**Wildcard Subdomain:**
+```env
+# Allow anyone from any subdomain: user@dev.company.com, user@staging.company.com
+AUTHORIZED_EMAILS=*@*.company.com
+```
+
+**Mixed Patterns:**
+```env
+# Combine exact emails with wildcard domains
+AUTHORIZED_EMAILS=john@company.com,*@yourcompany.com,*@partner.com,cto@external.com
+```
+
+**Pattern Matching Rules:**
+- `john@company.com` - Exact match only
+- `*@company.com` - Matches anyone from company.com (e.g., user@company.com)
+- `*@*.company.com` - Matches anyone from any subdomain (e.g., user@dev.company.com, user@staging.company.com)
+
+This makes it easy to authorize entire teams or organizations without listing individual emails.
 
 ### Role-Based Access (Advanced)
 

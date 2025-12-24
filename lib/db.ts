@@ -1059,7 +1059,13 @@ export async function updateBundle(bundleId: string, updates: {
     return { success: true };
   }
 
-  // For development, just return success
+  if (DB_PROVIDER === 'aws') {
+    // AWS S3 provider currently doesn't support direct bundle updates
+    // Hot Updater's s3Database is designed to be written only by the CLI
+    throw new Error('Bundle updates are not supported for AWS S3 provider. Please redeploy using the Hot Updater CLI to make changes.');
+  }
+
+  // For development with mock data, just return success
   return { success: true };
 }
 
@@ -1096,7 +1102,13 @@ export async function deleteBundle(bundleId: string) {
     return { success: true };
   }
 
-  // For development, just return success
+  if (DB_PROVIDER === 'aws') {
+    // AWS S3 provider currently doesn't support direct bundle deletion
+    // Hot Updater's s3Database is designed to be written only by the CLI
+    throw new Error('Bundle deletion is not supported for AWS S3 provider. Bundles are managed by the Hot Updater CLI.');
+  }
+
+  // For development with mock data, just return success
   return { success: true };
 }
 
@@ -1216,7 +1228,13 @@ export async function promoteBundle(bundleId: string, targetChannel: string, mov
     return { success: true };
   }
 
-  // For development, just return success
+  if (DB_PROVIDER === 'aws') {
+    // AWS S3 provider currently doesn't support direct bundle promotion
+    // Hot Updater's s3Database is designed to be written only by the CLI
+    throw new Error('Bundle promotion is not supported for AWS S3 provider. Please deploy to the target channel using the Hot Updater CLI.');
+  }
+
+  // For development with mock data, just return success
   return { success: true };
 }
 
