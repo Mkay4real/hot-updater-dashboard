@@ -371,6 +371,118 @@ function generateId(): string {
   return `bundle-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
 
+/**
+ * Find which S3 file contains a specific bundle by ID
+ * Returns the S3 key and the bundle data
+ */
+async function findBundleInS3(bundleId: string): Promise<{ key: string; bundles: any[] } | null> {
+  if (!s3ClientAWS) return null;
+
+  const { ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+  const bucketName = process.env.HOT_UPDATER_S3_BUCKET_NAME || '';
+
+  try {
+    // List all objects in bucket
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucketName,
+      MaxKeys: 1000,
+    });
+
+    const listResponse = await s3ClientAWS.send(listCommand);
+    const objects = listResponse.Contents || [];
+
+    // Check database files first
+    const possibleDatabaseFiles = [
+      'database.json',
+      'bundles.json',
+      'metadata.json',
+      'hot-updater/database.json',
+      'hot-updater/bundles.json',
+      '.hot-updater/database.json',
+    ];
+
+    for (const possibleFile of possibleDatabaseFiles) {
+      const found = objects.find((obj: any) => obj.Key === possibleFile);
+      if (found) {
+        try {
+          const getCommand = new GetObjectCommand({
+            Bucket: bucketName,
+            Key: found.Key,
+          });
+
+          const response = await s3ClientAWS.send(getCommand);
+          const bodyContents = await streamToString(response.Body);
+          const data = JSON.parse(bodyContents);
+
+          const bundles = Array.isArray(data) ? data : (data.bundles || data.data || []);
+          const bundleExists = bundles.some((b: any) => b.id === bundleId);
+
+          if (bundleExists) {
+            return { key: found.Key, bundles };
+          }
+        } catch (err) {
+          console.warn(`[AWS S3] Failed to read ${found.Key}:`, err);
+        }
+      }
+    }
+
+    // Check individual update.json files
+    const jsonFiles = objects.filter((obj: any) => obj.Key?.endsWith('/update.json'));
+
+    for (const jsonFile of jsonFiles) {
+      try {
+        const getCommand = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: jsonFile.Key,
+        });
+
+        const response = await s3ClientAWS.send(getCommand);
+        const bodyContents = await streamToString(response.Body);
+        const metadata = JSON.parse(bodyContents);
+
+        const bundles = Array.isArray(metadata) ? metadata : [metadata];
+        const bundleExists = bundles.some((b: any) => b.id === bundleId);
+
+        if (bundleExists) {
+          return { key: jsonFile.Key, bundles };
+        }
+      } catch (err) {
+        console.warn(`[AWS S3] Failed to read ${jsonFile.Key}:`, err);
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[AWS S3] Error finding bundle:', error);
+    return null;
+  }
+}
+
+/**
+ * Write bundle metadata back to S3
+ */
+async function writeS3BundlesMetadata(s3Key: string, bundles: any[]): Promise<void> {
+  if (!s3ClientAWS) throw new Error('S3 client not initialized');
+
+  const { PutObjectCommand } = require('@aws-sdk/client-s3');
+  const bucketName = process.env.HOT_UPDATER_S3_BUCKET_NAME || '';
+
+  try {
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: JSON.stringify(bundles, null, 2),
+      ContentType: 'application/json',
+    });
+
+    await s3ClientAWS.send(command);
+    console.log(`[AWS S3] Successfully wrote ${bundles.length} bundles to ${s3Key}`);
+  } catch (error) {
+    console.error('[AWS S3] Error writing metadata:', error);
+    throw new Error(`Failed to write metadata to S3: ${error}`);
+  }
+}
+
 // ============================================
 // DATABASE QUERIES
 // ============================================
@@ -1060,9 +1172,33 @@ export async function updateBundle(bundleId: string, updates: {
   }
 
   if (DB_PROVIDER === 'aws') {
-    // AWS S3 provider currently doesn't support direct bundle updates
-    // Hot Updater's s3Database is designed to be written only by the CLI
-    throw new Error('Bundle updates are not supported for AWS S3 provider. Please redeploy using the Hot Updater CLI to make changes.');
+    try {
+      const result = await findBundleInS3(bundleId);
+
+      if (!result) {
+        throw new Error('Bundle not found in S3');
+      }
+
+      const { key, bundles } = result;
+      const bundleIndex = bundles.findIndex((b: any) => b.id === bundleId);
+
+      if (bundleIndex === -1) {
+        throw new Error('Bundle not found in metadata');
+      }
+
+      // Update the bundle
+      if (updates.message !== undefined) bundles[bundleIndex].message = updates.message;
+      if (updates.enabled !== undefined) bundles[bundleIndex].enabled = updates.enabled;
+      if (updates.forceUpdate !== undefined) bundles[bundleIndex].should_force_update = updates.forceUpdate;
+
+      // Write back to S3
+      await writeS3BundlesMetadata(key, bundles);
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[AWS S3] Update bundle error:', error);
+      throw new Error(`Failed to update bundle in S3: ${error.message}`);
+    }
   }
 
   // For development with mock data, just return success
@@ -1103,9 +1239,29 @@ export async function deleteBundle(bundleId: string) {
   }
 
   if (DB_PROVIDER === 'aws') {
-    // AWS S3 provider currently doesn't support direct bundle deletion
-    // Hot Updater's s3Database is designed to be written only by the CLI
-    throw new Error('Bundle deletion is not supported for AWS S3 provider. Bundles are managed by the Hot Updater CLI.');
+    try {
+      const result = await findBundleInS3(bundleId);
+
+      if (!result) {
+        throw new Error('Bundle not found in S3');
+      }
+
+      const { key, bundles } = result;
+      const filteredBundles = bundles.filter((b: any) => b.id !== bundleId);
+
+      if (filteredBundles.length === bundles.length) {
+        throw new Error('Bundle not found in metadata');
+      }
+
+      // Write back to S3 without the deleted bundle
+      await writeS3BundlesMetadata(key, filteredBundles);
+
+      console.log(`[AWS S3] Successfully deleted bundle ${bundleId} from ${key}`);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[AWS S3] Delete bundle error:', error);
+      throw new Error(`Failed to delete bundle from S3: ${error.message}`);
+    }
   }
 
   // For development with mock data, just return success
@@ -1229,9 +1385,43 @@ export async function promoteBundle(bundleId: string, targetChannel: string, mov
   }
 
   if (DB_PROVIDER === 'aws') {
-    // AWS S3 provider currently doesn't support direct bundle promotion
-    // Hot Updater's s3Database is designed to be written only by the CLI
-    throw new Error('Bundle promotion is not supported for AWS S3 provider. Please deploy to the target channel using the Hot Updater CLI.');
+    try {
+      const result = await findBundleInS3(bundleId);
+
+      if (!result) {
+        throw new Error('Bundle not found in S3');
+      }
+
+      const { key, bundles } = result;
+      const bundleIndex = bundles.findIndex((b: any) => b.id === bundleId);
+
+      if (bundleIndex === -1) {
+        throw new Error('Bundle not found in metadata');
+      }
+
+      if (move) {
+        // Move: update the bundle's channel in place
+        bundles[bundleIndex].channel = targetChannel;
+        await writeS3BundlesMetadata(key, bundles);
+        console.log(`[AWS S3] Successfully moved bundle ${bundleId} to ${targetChannel}`);
+      } else {
+        // Copy: create a copy with new channel
+        const { randomUUID } = require('crypto');
+        const newBundle = {
+          ...bundles[bundleIndex],
+          id: randomUUID(), // Generate new ID for the copy
+          channel: targetChannel,
+        };
+        bundles.push(newBundle);
+        await writeS3BundlesMetadata(key, bundles);
+        console.log(`[AWS S3] Successfully copied bundle ${bundleId} to ${targetChannel} as ${newBundle.id}`);
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[AWS S3] Promote bundle error:', error);
+      throw new Error(`Failed to promote bundle in S3: ${error.message}`);
+    }
   }
 
   // For development with mock data, just return success
