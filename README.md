@@ -10,7 +10,7 @@ A production-ready, modern dashboard for managing Hot Updater (OTA) deployments 
 
 Deploy your own instance in minutes with one click:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyour-username%2Fhot-updater-dashboard&env=DB_PROVIDER,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&envDescription=Configure%20your%20database%20provider%20and%20credentials&envLink=https%3A%2F%2Fgithub.com%2Fyour-username%2Fhot-updater-dashboard%23environment-configuration&project-name=hot-updater-dashboard&repository-name=hot-updater-dashboard)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FMkay4real%2Fhot-updater-dashboard&env=DB_PROVIDER,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&envDescription=Configure%20your%20database%20provider%20and%20credentials&envLink=https%3A%2F%2Fgithub.com%2FMkay4real%2Fhot-updater-dashboard%23environment-configuration&project-name=hot-updater-dashboard&repository-name=hot-updater-dashboard)
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/hot-updater-dashboard)
 
@@ -490,8 +490,8 @@ Built with:
 ## 📧 Support
 
 - 📖 [Documentation](https://hot-updater.dev)
-- 🐛 [Report Issues](https://github.com/your-username/hot-updater-dashboard/issues)
-- 💬 [Discussions](https://github.com/your-username/hot-updater-dashboard/discussions)
+- 🐛 [Report Issues](https://github.com/Mkay4real/hot-updater-dashboard/issues)
+- 💬 [Discussions](https://github.com/Mkay4real/hot-updater-dashboard/discussions)
 
 ---
 

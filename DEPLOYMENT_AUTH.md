@@ -247,7 +247,7 @@ git add .
 git commit -m "Initial commit"
 
 # Create GitHub repository and push
-git remote add origin https://github.com/your-username/hot-updater-dashboard.git
+git remote add origin https://github.com/Mkay4real/hot-updater-dashboard.git
 git push -u origin main
 ```
 

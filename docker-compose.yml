@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hot-updater-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      # Database Provider
+      - DB_PROVIDER=${DB_PROVIDER:-supabase}
+
+      # Supabase Configuration (if using Supabase)
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+
+      # AWS S3 Configuration (if using AWS provider)
+      - HOT_UPDATER_S3_BUCKET_NAME=${HOT_UPDATER_S3_BUCKET_NAME}
+      - HOT_UPDATER_S3_REGION=${HOT_UPDATER_S3_REGION}
+      - HOT_UPDATER_S3_ACCESS_KEY_ID=${HOT_UPDATER_S3_ACCESS_KEY_ID}
+      - HOT_UPDATER_S3_SECRET_ACCESS_KEY=${HOT_UPDATER_S3_SECRET_ACCESS_KEY}
+      - HOT_UPDATER_CLOUDFRONT_DISTRIBUTION_ID=${HOT_UPDATER_CLOUDFRONT_DISTRIBUTION_ID}
+
+      # AWS RDS Configuration (if using AWS RDS)
+      - AWS_RDS_HOST=${AWS_RDS_HOST}
+      - AWS_RDS_PORT=${AWS_RDS_PORT:-5432}
+      - AWS_RDS_DATABASE=${AWS_RDS_DATABASE}
+      - AWS_RDS_USER=${AWS_RDS_USER}
+      - AWS_RDS_PASSWORD=${AWS_RDS_PASSWORD}
+      - AWS_RDS_SSL=${AWS_RDS_SSL:-true}
+
+      # AWS Credentials (for S3 with RDS or DynamoDB)
+      - AWS_REGION=${AWS_REGION}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+
+      # PostgreSQL Configuration (if using direct PostgreSQL)
+      - DATABASE_URL=${DATABASE_URL}
+
+      # Cloudflare D1 Configuration
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_D1_DATABASE_ID=${CLOUDFLARE_D1_DATABASE_ID}
+
+      # Hot Updater Configuration
+      - HOT_UPDATER_PROJECT_PATH=${HOT_UPDATER_PROJECT_PATH}
+
+      # Dashboard Configuration
+      - NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL:-http://localhost:3000}
+      - NODE_ENV=production
+    env_file:
+      - .env.local
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/stats', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+
+# Usage:
+# 1. Copy env.example to .env.local and configure your credentials
+# 2. Run: docker-compose up -d
+# 3. Visit: http://localhost:3000
+# 4. Stop: docker-compose down
+# 5. View logs: docker-compose logs -f
+# 6. Rebuild: docker-compose up -d --build

@@ -36,7 +36,7 @@ git add .
 git commit -m "Initial commit with Clerk authentication"
 
 # Create GitHub repo and push
-git remote add origin https://github.com/YOUR-USERNAME/hot-updater-dashboard.git
+git remote add origin https://github.com/Mkay4real/hot-updater-dashboard.git
 git branch -M main
 git push -u origin main
 ```

@@ -34,13 +34,13 @@ If you deployed your own instance using the one-click deploy button, you can eas
 
 ```bash
 # One-time setup: Add the original repository as upstream
-git remote add upstream https://github.com/your-username/hot-updater-dashboard.git
+git remote add upstream https://github.com/Mkay4real/hot-updater-dashboard.git
 
 # Verify remotes
 git remote -v
 # Should show:
-# origin    https://github.com/YOUR-USERNAME/hot-updater-dashboard.git (your fork)
-# upstream  https://github.com/your-username/hot-updater-dashboard.git (original)
+# origin    https://github.com/Mkay4real/hot-updater-dashboard.git (your fork)
+# upstream  https://github.com/Mkay4real/hot-updater-dashboard.git (original)
 
 # Fetch latest changes from upstream
 git fetch upstream
@@ -89,7 +89,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Add upstream if not exists
-          git remote add upstream https://github.com/your-username/hot-updater-dashboard.git || true
+          git remote add upstream https://github.com/Mkay4real/hot-updater-dashboard.git || true
 
           # Fetch and merge
           git fetch upstream
@@ -166,11 +166,11 @@ We welcome contributions! Here's how to contribute improvements back to the main
 # 1. Fork the repository on GitHub
 
 # 2. Clone your fork
-git clone https://github.com/YOUR-USERNAME/hot-updater-dashboard.git
+git clone https://github.com/Mkay4real/hot-updater-dashboard.git
 cd hot-updater-dashboard
 
 # 3. Add upstream remote
-git remote add upstream https://github.com/your-username/hot-updater-dashboard.git
+git remote add upstream https://github.com/Mkay4real/hot-updater-dashboard.git
 
 # 4. Install dependencies (this project uses yarn)
 yarn install

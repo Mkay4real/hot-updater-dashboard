@@ -24,7 +24,7 @@ jobs:
 
       - name: Add upstream remote
         run: |
-          git remote add upstream https://github.com/your-username/hot-updater-dashboard.git || true
+          git remote add upstream https://github.com/Mkay4real/hot-updater-dashboard.git || true
           git remote -v
 
       - name: Fetch upstream changes
@@ -44,7 +44,7 @@ jobs:
           echo "⚠️ Merge conflicts detected. Manual intervention required."
           echo "Please resolve conflicts manually by following these steps:"
           echo "1. Clone your repository locally"
-          echo "2. Run: git remote add upstream https://github.com/your-username/hot-updater-dashboard.git"
+          echo "2. Run: git remote add upstream https://github.com/Mkay4real/hot-updater-dashboard.git"
           echo "3. Run: git fetch upstream"
           echo "4. Run: git merge upstream/main"
           echo "5. Resolve conflicts in your editor"
@@ -80,7 +80,7 @@ jobs:
 
               2. Add upstream remote:
                  \`\`\`bash
-                 git remote add upstream https://github.com/your-username/hot-updater-dashboard.git
+                 git remote add upstream https://github.com/Mkay4real/hot-updater-dashboard.git
                  git fetch upstream
                  \`\`\`
 
