@@ -1,0 +1,113 @@
+{
+  "buildCommand": "yarn build",
+  "installCommand": "yarn install",
+  "framework": "nextjs",
+  "env": {
+    "DB_PROVIDER": {
+      "description": "Database provider for Hot Updater (supabase, aws, aws-rds, postgres, cloudflare-d1)",
+      "default": "supabase"
+    },
+    "NEXT_PUBLIC_SUPABASE_URL": {
+      "description": "Your Supabase project URL (required if DB_PROVIDER=supabase). Get from: https://app.supabase.com/project/_/settings/api"
+    },
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {
+      "description": "Your Supabase anonymous key (required if DB_PROVIDER=supabase)"
+    },
+    "HOT_UPDATER_S3_BUCKET_NAME": {
+      "description": "AWS S3 bucket name for Hot Updater bundles (required if DB_PROVIDER=aws)"
+    },
+    "HOT_UPDATER_S3_REGION": {
+      "description": "AWS region for S3 bucket (e.g., us-east-1)",
+      "default": "us-east-1"
+    },
+    "HOT_UPDATER_S3_ACCESS_KEY_ID": {
+      "description": "AWS access key ID for S3 access (required if DB_PROVIDER=aws)"
+    },
+    "HOT_UPDATER_S3_SECRET_ACCESS_KEY": {
+      "description": "AWS secret access key for S3 access (required if DB_PROVIDER=aws)"
+    },
+    "HOT_UPDATER_CLOUDFRONT_DISTRIBUTION_ID": {
+      "description": "Optional: CloudFront distribution ID for CDN access"
+    },
+    "AWS_RDS_HOST": {
+      "description": "AWS RDS PostgreSQL host (required if DB_PROVIDER=aws-rds)"
+    },
+    "AWS_RDS_PORT": {
+      "description": "AWS RDS PostgreSQL port",
+      "default": "5432"
+    },
+    "AWS_RDS_DATABASE": {
+      "description": "AWS RDS database name (required if DB_PROVIDER=aws-rds)",
+      "default": "hotupdater"
+    },
+    "AWS_RDS_USER": {
+      "description": "AWS RDS database user (required if DB_PROVIDER=aws-rds)",
+      "default": "postgres"
+    },
+    "AWS_RDS_PASSWORD": {
+      "description": "AWS RDS database password (required if DB_PROVIDER=aws-rds)"
+    },
+    "AWS_RDS_SSL": {
+      "description": "Enable SSL for RDS connection",
+      "default": "true"
+    },
+    "AWS_REGION": {
+      "description": "AWS region for S3 with RDS (required if using S3 with aws-rds)"
+    },
+    "AWS_S3_BUCKET_NAME": {
+      "description": "AWS S3 bucket for bundle storage with RDS (required if using S3 with aws-rds)"
+    },
+    "AWS_ACCESS_KEY_ID": {
+      "description": "AWS access key ID for S3/DynamoDB (required for aws-rds with S3 or dynamodb)"
+    },
+    "AWS_SECRET_ACCESS_KEY": {
+      "description": "AWS secret access key for S3/DynamoDB (required for aws-rds with S3 or dynamodb)"
+    },
+    "DATABASE_URL": {
+      "description": "PostgreSQL connection string (required if DB_PROVIDER=postgres). Format: postgresql://user:password@host:5432/database"
+    },
+    "CLOUDFLARE_ACCOUNT_ID": {
+      "description": "Cloudflare account ID (required if DB_PROVIDER=cloudflare-d1)"
+    },
+    "CLOUDFLARE_API_TOKEN": {
+      "description": "Cloudflare API token (required if DB_PROVIDER=cloudflare-d1)"
+    },
+    "CLOUDFLARE_D1_DATABASE_ID": {
+      "description": "Cloudflare D1 database ID (required if DB_PROVIDER=cloudflare-d1)"
+    },
+    "HOT_UPDATER_PROJECT_PATH": {
+      "description": "Optional: Path to your React Native project with hot-updater.config.ts (needed for deployments from dashboard)"
+    },
+    "NEXT_PUBLIC_DASHBOARD_URL": {
+      "description": "Dashboard URL (will be auto-filled by Vercel)"
+    }
+  },
+  "build": {
+    "env": {
+      "NEXT_TELEMETRY_DISABLED": "1"
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ]
+}

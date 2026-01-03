@@ -3,6 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
 
+  // Enable standalone output for Docker deployments
+  output: 'standalone',
+
   // Security headers
   async headers() {
     return [
