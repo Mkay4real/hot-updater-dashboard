@@ -6,21 +6,45 @@ A production-ready, modern dashboard for managing Hot Updater (OTA) deployments 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+![GitHub stars](https://img.shields.io/github/stars/Mkay4real/hot-updater-dashboard?style=social)
+![GitHub forks](https://img.shields.io/github/forks/Mkay4real/hot-updater-dashboard?style=social)
+![GitHub last commit](https://img.shields.io/github/last-commit/Mkay4real/hot-updater-dashboard)
+![GitHub issues](https://img.shields.io/github/issues/Mkay4real/hot-updater-dashboard)
+
 ## 🚀 Quick Deploy
 
-Deploy your own instance in minutes with one click:
+### ⭐ Recommended: Fork First (Get Easy Updates)
+
+**Why fork?** Forking gives you a "Sync fork" button in GitHub - one click to get improvements!
+
+**Step 1: Fork this repo**
+- Click the **"Fork"** button at the top of this page
+
+**Step 2: Deploy from your fork**
+1. Go to [Vercel](https://vercel.com) or [Railway](https://railway.app)
+2. Click "New Project" → "Import Git Repository"
+3. Select your forked repository
+4. Configure environment variables (see [env.example](env.example))
+5. Deploy!
+
+**Step 3: Get updates**
+- When updates are available, GitHub shows "Sync fork" button on your repo
+- Click it to get latest improvements
+- Your hosting platform auto-deploys the updates
+
+### Alternative: One-Click Deploy (No Fork Benefits)
+
+For quick testing without maintaining connection to upstream:
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FMkay4real%2Fhot-updater-dashboard&env=DB_PROVIDER,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&envDescription=Configure%20your%20database%20provider%20and%20credentials&envLink=https%3A%2F%2Fgithub.com%2FMkay4real%2Fhot-updater-dashboard%23environment-configuration&project-name=hot-updater-dashboard&repository-name=hot-updater-dashboard)
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/hot-updater-dashboard)
+⚠️ **Note:** One-click buttons create a clone (not fork). You won't get the easy "Sync fork" button. To sync later, see [manual sync instructions](CONTRIBUTING.md#method-2-command-line).
 
-**After deployment:**
-1. The platform will prompt you to configure environment variables
-2. Set `DB_PROVIDER` to your chosen database (supabase, aws, postgres, etc.)
-3. Add your database credentials
-4. Your dashboard will be live in ~2 minutes!
+### 🐳 Other Deployment Options
 
-**Keeping Up-to-Date:** See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on syncing with upstream updates.
+- **Docker:** `docker-compose up -d` (see [docker-compose.yml](docker-compose.yml))
+- **Self-hosted:** Full guide in [DEPLOYMENT_AUTH.md](DEPLOYMENT_AUTH.md)
+- **Railway/Render/Fly.io:** Platform-specific guides available
 
 ## ✨ Features
 
