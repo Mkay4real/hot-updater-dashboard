@@ -6,6 +6,22 @@ A production-ready, modern dashboard for managing Hot Updater (OTA) deployments 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+## 🚀 Quick Deploy
+
+Deploy your own instance in minutes with one click:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FMkay4real%2Fhot-updater-dashboard&env=DB_PROVIDER,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&envDescription=Configure%20your%20database%20provider%20and%20credentials&envLink=https%3A%2F%2Fgithub.com%2FMkay4real%2Fhot-updater-dashboard%23environment-configuration&project-name=hot-updater-dashboard&repository-name=hot-updater-dashboard)
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/hot-updater-dashboard)
+
+**After deployment:**
+1. The platform will prompt you to configure environment variables
+2. Set `DB_PROVIDER` to your chosen database (supabase, aws, postgres, etc.)
+3. Add your database credentials
+4. Your dashboard will be live in ~2 minutes!
+
+**Keeping Up-to-Date:** See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on syncing with upstream updates.
+
 ## ✨ Features
 
 - 📊 **Real-time Deployment Tracking** - Monitor all your OTA updates in one place
@@ -40,28 +56,38 @@ The dashboard features:
 
 ## 📦 Installation
 
-### Prerequisites
+### Option 1: One-Click Deploy (Recommended)
 
+The fastest way to get started - click a deploy button above and follow the prompts. Perfect for:
+- **Quick testing** - Try the dashboard without local setup
+- **Production deployments** - Get a hosted dashboard instantly
+- **Easy updates** - Sync upstream improvements with one click
+
+### Option 2: Local Development
+
+For customization and local development:
+
+**Prerequisites:**
 - Node.js 20.x or later
-- npm, yarn, or pnpm
+- yarn (this project uses yarn)
 - A database provider: Supabase (recommended), AWS RDS, PostgreSQL, Cloudflare D1, or Firebase
 - Hot Updater configured in your React Native project
 
-### Quick Setup
+**Quick Setup:**
 
 ```bash
 # Clone or download this repository
 cd hot-updater-dashboard
 
 # Install dependencies
-npm install
+yarn install
 
 # Set up environment variables
 cp env.example .env.local
 # Edit .env.local with your credentials
 
 # Run the development server
-npm run dev
+yarn dev
 ```
 
 Visit [http://localhost:3000](http://localhost:3000) to see your dashboard!
@@ -464,8 +490,8 @@ Built with:
 ## 📧 Support
 
 - 📖 [Documentation](https://hot-updater.dev)
-- 🐛 [Report Issues](https://github.com/your-username/hot-updater-dashboard/issues)
-- 💬 [Discussions](https://github.com/your-username/hot-updater-dashboard/discussions)
+- 🐛 [Report Issues](https://github.com/Mkay4real/hot-updater-dashboard/issues)
+- 💬 [Discussions](https://github.com/Mkay4real/hot-updater-dashboard/discussions)
 
 ---
 
