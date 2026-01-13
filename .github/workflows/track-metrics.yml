@@ -1,0 +1,129 @@
+name: Track Repository Metrics
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Repository Stats
+        id: stats
+        run: |
+          # Fetch repository statistics
+          STATS=$(curl -s https://api.github.com/repos/Mkay4real/hot-updater-dashboard)
+
+          echo "stars=$(echo $STATS | jq .stargazers_count)" >> $GITHUB_OUTPUT
+          echo "forks=$(echo $STATS | jq .forks_count)" >> $GITHUB_OUTPUT
+          echo "watchers=$(echo $STATS | jq .subscribers_count)" >> $GITHUB_OUTPUT
+          echo "open_issues=$(echo $STATS | jq .open_issues_count)" >> $GITHUB_OUTPUT
+
+      - name: Get Traffic Stats
+        id: traffic
+        run: |
+          # Get traffic data (views and clones)
+          VIEWS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/Mkay4real/hot-updater-dashboard/traffic/views)
+
+          CLONES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/Mkay4real/hot-updater-dashboard/traffic/clones)
+
+          echo "unique_views=$(echo $VIEWS | jq .uniques)" >> $GITHUB_OUTPUT
+          echo "total_views=$(echo $VIEWS | jq .count)" >> $GITHUB_OUTPUT
+          echo "unique_clones=$(echo $CLONES | jq .uniques)" >> $GITHUB_OUTPUT
+          echo "total_clones=$(echo $CLONES | jq .count)" >> $GITHUB_OUTPUT
+
+      - name: Save Metrics
+        run: |
+          # Create metrics directory if it doesn't exist
+          mkdir -p .github/metrics
+
+          # Save daily metrics
+          DATE=$(date +%Y-%m-%d)
+          cat << EOF > .github/metrics/$DATE.json
+          {
+            "date": "$DATE",
+            "stars": ${{ steps.stats.outputs.stars }},
+            "forks": ${{ steps.stats.outputs.forks }},
+            "watchers": ${{ steps.stats.outputs.watchers }},
+            "open_issues": ${{ steps.stats.outputs.open_issues }},
+            "unique_views_14d": ${{ steps.traffic.outputs.unique_views }},
+            "total_views_14d": ${{ steps.traffic.outputs.total_views }},
+            "unique_clones_14d": ${{ steps.traffic.outputs.unique_clones }},
+            "total_clones_14d": ${{ steps.traffic.outputs.total_clones }}
+          }
+          EOF
+
+          echo "📊 Metrics saved for $DATE"
+          cat .github/metrics/$DATE.json
+
+      - name: Update Summary
+        run: |
+          # Create or update metrics summary
+          cat << EOF > .github/metrics/README.md
+          # Repository Metrics
+
+          Last updated: $(date +"%Y-%m-%d %H:%M UTC")
+
+          ## Current Stats
+
+          - ⭐ **Stars**: ${{ steps.stats.outputs.stars }}
+          - 🔱 **Forks**: ${{ steps.stats.outputs.forks }}
+          - 👀 **Watchers**: ${{ steps.stats.outputs.watchers }}
+          - 🐛 **Open Issues**: ${{ steps.stats.outputs.open_issues }}
+
+          ## Traffic (Last 14 Days)
+
+          - 👁️ **Unique Visitors**: ${{ steps.traffic.outputs.unique_views }}
+          - 📊 **Total Views**: ${{ steps.traffic.outputs.total_views }}
+          - 📦 **Unique Clones**: ${{ steps.traffic.outputs.unique_clones }}
+          - 🔄 **Total Clones**: ${{ steps.traffic.outputs.total_clones }}
+
+          ## Historical Data
+
+          Daily metrics are stored in JSON files in this directory.
+
+          To analyze trends:
+          \`\`\`bash
+          # View all metrics
+          cat .github/metrics/*.json | jq
+
+          # Plot star growth
+          jq -r '[.date, .stars] | @csv' .github/metrics/*.json
+          \`\`\`
+
+          ## Estimated Usage
+
+          Based on clones (proxy for installations):
+          - **Estimated active installations**: ~${{ steps.traffic.outputs.unique_clones }} (last 14 days)
+          - **Total installations (all time)**: Check cumulative clones in historical data
+
+          ---
+
+          *Metrics tracked automatically by GitHub Actions*
+          EOF
+
+      - name: Commit Metrics
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .github/metrics/
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "📊 Update metrics: $(date +%Y-%m-%d)"
+            git push
+            echo "✅ Metrics committed and pushed"
+          fi
